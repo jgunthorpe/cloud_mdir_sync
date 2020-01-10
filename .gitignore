@@ -1,0 +1,6 @@
+__pycache__/
+cloud_mdir_sync.egg-info/
+.venv/
+.mypy_cache/
+.vscode/
+

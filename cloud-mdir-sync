@@ -1,0 +1,21 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0+
+# This script will setup a local virtual environment with all the required
+# python packages and then invoke the current source code within it. It is
+# useful for development and 'run from source' approaches
+set -e
+VENV=$(dirname "$BASH_SOURCE")/.venv
+if [ ! -f "$VENV/bin/activate" ]; then
+    python3 -m venv "$VENV"
+    echo '*' > "$VENV/.gitignore"
+    source "$VENV/bin/activate"
+    # MSAL doesn't work with old PIPs, they document that at least this one
+    # works.
+    pip install --upgrade 'pip>=18.1'
+    pip install -e $(dirname "$BASH_SOURCE")
+    # Developer tools
+    pip install mypy typing yapf pylint
+else
+    source "$VENV/bin/activate"
+fi
+exec "$VENV/bin/cloud-mdir-sync" "$@"
