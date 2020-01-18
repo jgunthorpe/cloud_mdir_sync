@@ -502,6 +502,8 @@ class O365Mailbox(mailbox.Mailbox):
         r = None
         while True:
             if r is None:
+                self.need_update = True
+                self.changed_event.set()
                 r = await self.graph.owa_subscribe(
                     f"https://outlook.office.com/api/beta/me/mailfolders('{self.mailbox_id}')/Messages",
                     "Created,Updated,Deleted")
