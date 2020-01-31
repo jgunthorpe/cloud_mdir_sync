@@ -535,12 +535,14 @@ class O365Mailbox(mailbox.Mailbox):
 
     def _update_msg_flags(self, cmsg: messages.Message,
                           old_cmsg_flags: int, lmsg: messages.Message):
-        if lmsg.flags == old_cmsg_flags or lmsg.flags == cmsg.flags:
+        lflags = lmsg.flags & (messages.Message.ALL_FLAGS
+                               ^ messages.Message.FLAG_DELETED)
+        if lflags == old_cmsg_flags or lflags == cmsg.flags:
             return None
 
         cloud_flags = cmsg.flags ^ old_cmsg_flags
         flag_mask = messages.Message.ALL_FLAGS ^ cloud_flags
-        nflags = (lmsg.flags & flag_mask) | (cmsg.flags & cloud_flags)
+        nflags = (lflags & flag_mask) | (cmsg.flags & cloud_flags)
         modified_flags = nflags ^ cmsg.flags
 
         # FIXME: https://docs.microsoft.com/en-us/graph/best-practices-concept#getting-minimal-responses
@@ -607,7 +609,8 @@ class O365Mailbox(mailbox.Mailbox):
         # There is a batching API for this kind of stuff as well:
         # https://docs.microsoft.com/en-us/graph/json-batching
         self.last_merge_len = 0
-        todo = []
+        todo_flags = []
+        todo_del = []
         if self.cfg.trace_file is not None:
             pickle.dump(["merge_content", self.name, self.messages, msgs],
                         self.cfg.trace_file)
@@ -617,26 +620,33 @@ class O365Mailbox(mailbox.Mailbox):
             # old_cmsg is the original cloud message from the last sync
             lmsg, old_cmsg = mpair
             cmsg = self.messages.get(ch)
+            assert old_cmsg is not None
 
-            # Cloud message was deleted, cloud takes priority
-            if cmsg is None:
-                continue
-            if lmsg is None:
-                # Debugging that the message really is to be deleted
+            # Update flags
+            if cmsg is not None and old_cmsg is not None and lmsg is not None:
+                patch = self._update_msg_flags(cmsg, old_cmsg.flags, lmsg)
+                if patch:
+                    todo_flags.append(patch)
+
+            # Debugging that the message really is to be deleted
+            if cmsg is not None and lmsg is None:
                 assert os.stat(os.path.join(self.cfg.msgdb.hashes_dir,
                                             ch)).st_nlink == 1
+
+            # This only happens if the user is not using DeletedMailDir and
+            # the delete_msgs path below
+            if cmsg is not None and (lmsg is None or lmsg.flags
+                                     & messages.Message.FLAG_DELETED):
                 # Delete cloud message
-                todo.append(
+                todo_del.append(
                     self.graph.post_json(
                         "v1.0",
                         f"/me/mailFolders/{self.mailbox}/messages/{cmsg.storage_id}/move",
                         body={"destinationId": "deleteditems"}))
                 del self.messages[ch]
-                continue
 
-            patch = self._update_msg_flags(cmsg, old_cmsg.flags, lmsg)
-            if patch:
-                todo.append(patch)
-
-        await asyncio.gather(*todo)
-        self.last_merge_len = len(todo)
+        await asyncio.gather(*todo_flags)
+        # Delete must be temporally after move as move will change the mailbox
+        # id.
+        await asyncio.gather(*todo_del)
+        self.last_merge_len = len(todo_flags) + len(todo_del)
