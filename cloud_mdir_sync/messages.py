@@ -29,7 +29,7 @@ MBoxDict_Type = Dict["mailbox.Mailbox", Dict[ContentHash_Type,
                                            "Message"]]
 CHMsgDict_Type = Dict[ContentHash_Type, "Message"]
 CHMsgMappingDict_Type = Dict[ContentHash_Type, Tuple[Optional["Message"],
-                                                     "Message"]]
+                                                     Optional["Message"]]]
 
 
 class Message(object):
@@ -40,7 +40,8 @@ class Message(object):
     FLAG_REPLIED = 1 << 0
     FLAG_READ = 1 << 1
     FLAG_FLAGGED = 1 << 2
-    ALL_FLAGS = FLAG_REPLIED | FLAG_READ | FLAG_FLAGGED
+    FLAG_DELETED = 1 << 3
+    ALL_FLAGS = FLAG_REPLIED | FLAG_READ | FLAG_FLAGGED | FLAG_DELETED
     fn: str
 
     def __init__(self, mailbox, storage_id, email_id=None):

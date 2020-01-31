@@ -54,6 +54,8 @@ class MailDirMailbox(mailbox.Mailbox):
             res.add("S")
         if msg.flags & messages.Message.FLAG_FLAGGED:
             res.add("F")
+        if msg.flags & messages.Message.FLAG_DELETED:
+            res.add("T")
         return res
 
     def _decode_msg_filename(self, fn):
@@ -71,6 +73,8 @@ class MailDirMailbox(mailbox.Mailbox):
             mflags |= messages.Message.FLAG_READ
         if "F" in flags:
             mflags |= messages.Message.FLAG_FLAGGED
+        if "T" in flags:
+            mflags |= messages.Message.FLAG_DELETED
         assert ":2," not in fn
         return (fn, flags, mflags)
 
@@ -153,7 +157,7 @@ class MailDirMailbox(mailbox.Mailbox):
         cloud_flags = self._msg_to_flags(cloudmsg)
 
         base, mflags, _ = self._decode_msg_filename(mymsg.fn)
-        nflags = (mflags - set(("R", "S", "F"))) | cloud_flags
+        nflags = (mflags - set(("R", "S", "F", "T"))) | cloud_flags
         if mflags == nflags:
             return
         if nflags:
