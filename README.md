@@ -147,6 +147,19 @@ With this design the maildir files are never disturbed. Even if the cloud side
 changes UIDs the content hash matching will keep the same filename for the
 maildir after re-downloading the message.
 
+# Mail User Agent Configuration
+
+cloud-mdir-sync will work with any Maildir based MUA, however things will work
+best if the MUA is configured to set the Trash flag on the message rather than
+deleting them from the folder. Using the Trash flag allows cloud-mdir-sync to
+keep track of changes in message flags during deletion.
+
+For mutt use the following configuration:
+
+```
+set maildir_trash = yes
+```
+
 # Future Work/TODO
 - Use delta queries on mailboxes with MS Graph. Delta queries allow
   downloading only changed message meta-data and will accelerate polling of
