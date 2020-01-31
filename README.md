@@ -147,6 +147,14 @@ With this design the maildir files are never disturbed. Even if the cloud side
 changes UIDs the content hash matching will keep the same filename for the
 maildir after re-downloading the message.
 
+## Offline Mode
+
+The `--offline` command line argument will allow cloud-mdir-sync to trust the
+local message flags. This mode is slightly dangerous as any dual-edit of
+message flags (including deletion or undeletion!) will be resolved in favor of
+the local state, not the cloud state. For message deletion to work with
+offline mode the MUA must use the Trash flag.
+
 # Mail User Agent Configuration
 
 cloud-mdir-sync will work with any Maildir based MUA, however things will work

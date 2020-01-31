@@ -11,19 +11,21 @@ import pyinotify
 from . import config, mailbox, messages, oauth, office365
 
 
-def force_local_to_cloud(cfg: config.Config) -> messages.MBoxDict_Type:
-    """Make all the local mailboxes match their cloud content, overwriting any
-    local changes."""
-
-    # For every cloud message figure out which local mailbox it belongs to
+def route_cloud_messages(cfg: config.Config) -> messages.MBoxDict_Type:
+    """For every cloud message figure out which local mailbox it belongs to"""
     msgs: messages.MBoxDict_Type = {}
     for mbox in cfg.local_mboxes:
         msgs[mbox] = {}
     for mbox in cfg.cloud_mboxes:
-        for ch,msg in mbox.messages.items():
+        for ch, msg in mbox.messages.items():
             dest = cfg.direct_message(msg)
             msgs[dest][ch] = msg
+    return msgs
 
+
+def force_local_to_cloud(cfg: config.Config, msgs: messages.MBoxDict_Type):
+    """Make all the local mailboxes match their cloud content, overwriting any
+    local changes."""
     for mbox, msgdict in msgs.items():
         if not mbox.same_messages(msgdict):
             mbox.force_content(cfg.msgdb, msgdict)
@@ -31,7 +33,8 @@ def force_local_to_cloud(cfg: config.Config) -> messages.MBoxDict_Type:
 
 
 async def update_cloud_from_local(cfg: config.Config,
-                                  msgs_by_local: messages.MBoxDict_Type):
+                                  msgs_by_local: messages.MBoxDict_Type,
+                                  offline_mode=False):
     """Detect differences made by the local mailboxes and upload them to the
     cloud."""
     msgs_by_cloud: Dict[mailbox.Mailbox, messages.CHMsgMappingDict_Type] = {}
@@ -39,8 +42,12 @@ async def update_cloud_from_local(cfg: config.Config,
         msgs_by_cloud[mbox] = {}
     for local_mbox, msgdict in msgs_by_local.items():
         for ch, cloud_msg in msgdict.items():
-            msgs_by_cloud[cloud_msg.mailbox][ch] = (
-                local_mbox.messages.get(ch), cloud_msg)
+            lmsg = local_mbox.messages.get(ch)
+            # When doing the first sweep in offline mode ignore missing local
+            # messages, only synchronize message flags.
+            if lmsg is None and offline_mode:
+                continue
+            msgs_by_cloud[cloud_msg.mailbox][ch] = (lmsg, cloud_msg)
     await asyncio.gather(*(
         mbox.merge_content(msgdict) for mbox, msgdict in msgs_by_cloud.items()
         if not mbox.same_messages(msgdict, tuple_form=True)))
@@ -62,10 +69,16 @@ async def synchronize_mail(cfg: config.Config):
                                        for mbox in cfg.all_mboxes()
                                        if mbox.need_update))
 
+                nmsgs = route_cloud_messages(cfg)
                 if msgs is not None:
                     await update_cloud_from_local(cfg, msgs)
+                elif cfg.args.OFFLINE:
+                    await update_cloud_from_local(cfg,
+                                                  nmsgs,
+                                                  offline_mode=True)
 
-                msgs = force_local_to_cloud(cfg)
+                force_local_to_cloud(cfg, nmsgs)
+                msgs = nmsgs
             except (FileNotFoundError, asyncio.TimeoutError,
                     aiohttp.client_exceptions.ClientError, IOError,
                     RuntimeError):
@@ -97,9 +110,18 @@ def main():
                         dest="CFG",
                         default="cms.cfg",
                         help="Configuration file to use")
+    parser.add_argument(
+        "--offline",
+        dest="OFFLINE",
+        default=False,
+        action="store_true",
+        help=
+        "Enable offline mode, local changes to message flags will be considered authoritative."
+    )
     args = parser.parse_args()
 
     cfg = config.Config()
+    cfg.args = args
     cfg.load_config(args.CFG)
     cfg.loop = asyncio.get_event_loop()
     with contextlib.closing(pyinotify.WatchManager()) as wm, \
