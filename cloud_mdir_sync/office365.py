@@ -533,10 +533,77 @@ class O365Mailbox(mailbox.Mailbox):
     def force_content(self, msgdb, msgs):
         raise RuntimeError("Cannot move messages into the Cloud")
 
+    def _update_msg_flags(self, cmsg: messages.Message,
+                          old_cmsg_flags: int, lmsg: messages.Message):
+        if lmsg.flags == old_cmsg_flags or lmsg.flags == cmsg.flags:
+            return None
+
+        cloud_flags = cmsg.flags ^ old_cmsg_flags
+        flag_mask = messages.Message.ALL_FLAGS ^ cloud_flags
+        nflags = (lmsg.flags & flag_mask) | (cmsg.flags & cloud_flags)
+        modified_flags = nflags ^ cmsg.flags
+
+        # FIXME: https://docs.microsoft.com/en-us/graph/best-practices-concept#getting-minimal-responses
+        # FIXME: Does the ID change?
+        patch: Dict[str, Any] = {}
+        if modified_flags & messages.Message.FLAG_READ:
+            patch["isRead"] = bool(nflags & messages.Message.FLAG_READ)
+        if modified_flags & messages.Message.FLAG_FLAGGED:
+            patch["flag"] = {
+                "flagStatus":
+                "flagged" if nflags
+                & messages.Message.FLAG_FLAGGED else "notFlagged"
+            }
+        if modified_flags & messages.Message.FLAG_REPLIED:
+            # This can only be described as an undocumented disaster.
+            # Different clients set different things. The Icon shows up in
+            # OWS and the Mobile app. The MessageStatus shows up in
+            # IMAP. IMAP sets the MessageStatus but otherwise does not
+            # interact with the other two. We can't seem to set
+            # MessageStatus over REST because it needs RopSetMessageStatus.
+            if nflags & messages.Message.FLAG_REPLIED:
+                now = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+                patch["singleValueExtendedProperties"] = [
+                    # PidTagLastVerbExecuted
+                    {
+                        "id": "Integer 0x1081",
+                        "value": "103"
+                    },
+                    # PidTagLastVerbExecutionTime
+                    {
+                        "id": "SystemTime 0x1082",
+                        "value": now
+                    },
+                    # PidTagIconIndex
+                    {
+                        "id": "Integer 0x1080",
+                        "value": "261"
+                    },
+                ]
+            else:
+                # Rarely does anything undo a replied flag, but it is
+                # useful for testing.
+                patch["singleValueExtendedProperties"] = [
+                    {
+                        "id":
+                        "Integer 0x1080",  # PidTagIconIndex
+                        "value":
+                        "256" if nflags
+                        & messages.Message.FLAG_READ else "-1"
+                    },
+                ]
+        if not patch:
+            return None
+        cmsg.flags = nflags
+        return self.graph.patch_json(
+            "v1.0",
+            f"/me/mailFolders/{self.mailbox}/messages/{cmsg.storage_id}",
+            body=patch)
+
     @util.log_progress(lambda self: f"Uploading local changes for {self.name}",
                        lambda self: f", {self.last_merge_len} changes ")
     @mailbox.update_on_failure
-    async def merge_content(self, msgs):
+    async def merge_content(self, msgs: messages.CHMsgMappingDict_Type):
         # There is a batching API for this kind of stuff as well:
         # https://docs.microsoft.com/en-us/graph/json-batching
         self.last_merge_len = 0
@@ -564,76 +631,12 @@ class O365Mailbox(mailbox.Mailbox):
                         "v1.0",
                         f"/me/mailFolders/{self.mailbox}/messages/{cmsg.storage_id}/move",
                         body={"destinationId": "deleteditems"}))
-                # FIXME: This should be after the operation completes?
                 del self.messages[ch]
                 continue
 
-            if (lmsg.flags == old_cmsg.flags or lmsg.flags == cmsg.flags):
-                continue
-
-            cloud_flags = cmsg.flags ^ old_cmsg.flags
-            flag_mask = messages.Message.ALL_FLAGS ^ cloud_flags
-            nflags = (lmsg.flags & flag_mask) | (cmsg.flags & cloud_flags)
-            modified_flags = nflags ^ cmsg.flags
-
-            # FIXME: https://docs.microsoft.com/en-us/graph/best-practices-concept#getting-minimal-responses
-            # FIXME: Does the ID change?
-            patch: Dict[str, Any] = {}
-            if modified_flags & messages.Message.FLAG_READ:
-                patch["isRead"] = bool(nflags & messages.Message.FLAG_READ)
-            if modified_flags & messages.Message.FLAG_FLAGGED:
-                patch["flag"] = {
-                    "flagStatus":
-                    "flagged" if nflags
-                    & messages.Message.FLAG_FLAGGED else "notFlagged"
-                }
-            if modified_flags & messages.Message.FLAG_REPLIED:
-                # This can only be described as an undocumented disaster.
-                # Different clients set different things. The Icon shows up in
-                # OWS and the Mobile app. The MessageStatus shows up in
-                # IMAP. IMAP sets the MessageStatus but otherwise does not
-                # interact with the other two. We can't seem to set
-                # MessageStatus over REST because it needs RopSetMessageStatus.
-                if nflags & messages.Message.FLAG_REPLIED:
-                    now = datetime.datetime.utcnow().strftime(
-                        "%Y-%m-%dT%H:%M:%SZ")
-                    patch["singleValueExtendedProperties"] = [
-                        # PidTagLastVerbExecuted
-                        {
-                            "id": "Integer 0x1081",
-                            "value": "103"
-                        },
-                        # PidTagLastVerbExecutionTime
-                        {
-                            "id": "SystemTime 0x1082",
-                            "value": now
-                        },
-                        # PidTagIconIndex
-                        {
-                            "id": "Integer 0x1080",
-                            "value": "261"
-                        },
-                    ]
-                else:
-                    # Rarely does anything undo a replied flag, but it is
-                    # useful for testing.
-                    patch["singleValueExtendedProperties"] = [
-                        {
-                            "id":
-                            "Integer 0x1080",  # PidTagIconIndex
-                            "value":
-                            "256" if nflags
-                            & messages.Message.FLAG_READ else "-1"
-                        },
-                    ]
-
+            patch = self._update_msg_flags(cmsg, old_cmsg.flags, lmsg)
             if patch:
-                todo.append(
-                    self.graph.patch_json(
-                        "v1.0",
-                        f"/me/mailFolders/{self.mailbox}/messages/{cmsg.storage_id}",
-                        body=patch))
-                cmsg.flags = nflags
+                todo.append(patch)
 
         await asyncio.gather(*todo)
         self.last_merge_len = len(todo)
