@@ -7,7 +7,7 @@ import os
 import pickle
 import secrets
 import webbrowser
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
 import aiohttp
 import requests
@@ -105,7 +105,6 @@ class GraphAPI(object):
         # https://docs.microsoft.com/en-us/graph/outlook-immutable-id
         self.headers["Prefer"] = 'IdType="ImmutableId"'
 
-        # FIXME: tennant/authority
         self.msal = msal.PublicClientApplication(
             client_id="122f4826-adf9-465d-8e84-e9d00bc9f234",
             authority=f"https://login.microsoftonline.com/{tenant}",
@@ -362,21 +361,26 @@ class O365Mailbox(mailbox.Mailbox):
     cfg: config.Config
     graph: GraphAPI
 
-    def __init__(self, mailbox, user=None, tenant="common"):
+    def __init__(self,
+                 mailbox: str,
+                 user: Optional[str] = None,
+                 tenant="common"):
         super().__init__()
         self.mailbox = mailbox
         self.tenant = tenant
         self.user = user
 
-    async def setup_mbox(self, cfg):
+    async def setup_mbox(self, cfg: config.Config):
         """Setup access to the authenticated API domain for this endpoint"""
         self.cfg = cfg
         self.loop = cfg.loop
         did = f"o365-{self.user}-{self.tenant}"
-        self.graph = cfg.domains.get(did)
-        if self.graph is None:
+        graph = cfg.domains.get(did)
+        if graph is None:
             self.graph = GraphAPI(cfg, did, self.user, self.tenant)
             cfg.domains[did] = self.graph
+        else:
+            self.graph = graph
 
         self.name = f"{self.graph.name}:{self.mailbox}"
 
@@ -393,7 +397,8 @@ class O365Mailbox(mailbox.Mailbox):
             asyncio.create_task(self._monitor_changes())
 
     @mailbox.update_on_failure
-    async def _fetch_message(self, msg, msgdb):
+    async def _fetch_message(self, msg: messages.Message,
+                             msgdb: messages.MessageDB):
         with util.log_progress_ctx(logging.DEBUG,
                                    f"Downloading {msg.email_id}",
                                    lambda msg: f" {util.sizeof_fmt(msg.size)}",
@@ -450,7 +455,7 @@ class O365Mailbox(mailbox.Mailbox):
     @util.log_progress(lambda self: f"Updating Message List for {self.name}",
                        lambda self: f", {len(self.messages)} msgs")
     @mailbox.update_on_failure
-    async def update_message_list(self, msgdb):
+    async def update_message_list(self, msgdb: messages.MessageDB):
         """Retrieve the list of all messages and store all the message content in the
         content_hash message database"""
         todo = []
@@ -633,8 +638,6 @@ class O365Mailbox(mailbox.Mailbox):
                 assert os.stat(os.path.join(self.cfg.msgdb.hashes_dir,
                                             ch)).st_nlink == 1
 
-            # This only happens if the user is not using DeletedMailDir and
-            # the delete_msgs path below
             if cmsg is not None and (lmsg is None or lmsg.flags
                                      & messages.Message.FLAG_DELETED):
                 # Delete cloud message

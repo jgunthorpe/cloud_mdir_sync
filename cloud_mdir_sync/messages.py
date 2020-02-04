@@ -43,6 +43,7 @@ class Message(object):
     FLAG_DELETED = 1 << 3
     ALL_FLAGS = FLAG_REPLIED | FLAG_READ | FLAG_FLAGGED | FLAG_DELETED
     fn: str
+    size: Optional[int]
 
     def __init__(self, mailbox, storage_id, email_id=None):
         assert storage_id
