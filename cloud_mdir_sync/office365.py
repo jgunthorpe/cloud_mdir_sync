@@ -355,6 +355,10 @@ class GraphAPI(object):
 class O365Mailbox(mailbox.Mailbox):
     """Cloud Office365 mailbox using the Microsoft Graph RESET API for data access"""
     storage_kind = "o365_v0"
+    supported_flags = (messages.Message.FLAG_REPLIED
+                       | messages.Message.FLAG_READ
+                       | messages.Message.FLAG_FLAGGED
+                       | messages.Message.FLAG_DELETED)
     loop: asyncio.AbstractEventLoop
     timer = None
     use_owa_subscribe = True

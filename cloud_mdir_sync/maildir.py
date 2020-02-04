@@ -18,6 +18,10 @@ def unfold_header(s):
 class MailDirMailbox(mailbox.Mailbox):
     """Local MailDir mail directory"""
     storage_kind = "maildir"
+    supported_flags = (messages.Message.FLAG_REPLIED
+                       | messages.Message.FLAG_READ
+                       | messages.Message.FLAG_FLAGGED
+                       | messages.Message.FLAG_DELETED)
     cfg: config.Config
 
     def __init__(self, directory):
@@ -44,17 +48,17 @@ class MailDirMailbox(mailbox.Mailbox):
         self.need_update = True
         self.changed_event.set()
 
-    def _msg_to_flags(self, msg: messages.Message):
+    def _msg_to_flags(self, flags: int):
         """Return the desired maildir flags from a message"""
         # See https://cr.yp.to/proto/maildir.html
         res = set()
-        if msg.flags & messages.Message.FLAG_REPLIED:
+        if flags & messages.Message.FLAG_REPLIED:
             res.add("R")
-        if msg.flags & messages.Message.FLAG_READ:
+        if flags & messages.Message.FLAG_READ:
             res.add("S")
-        if msg.flags & messages.Message.FLAG_FLAGGED:
+        if flags & messages.Message.FLAG_FLAGGED:
             res.add("F")
-        if msg.flags & messages.Message.FLAG_DELETED:
+        if flags & messages.Message.FLAG_DELETED:
             res.add("T")
         return res
 
@@ -120,7 +124,7 @@ class MailDirMailbox(mailbox.Mailbox):
         """Return a unique maildir filename for the given message"""
         tm = time.clock_gettime(time.CLOCK_REALTIME)
         base = f"{int(tm)}.M{int((tm%1)*1000*1000)}-{msg.content_hash}"
-        flags = self._msg_to_flags(msg)
+        flags = self._msg_to_flags(msg.flags)
         if flags:
             fn = os.path.join(self.dfn, "cur",
                               base + ":2," + "".join(sorted(flags)))
@@ -154,8 +158,17 @@ class MailDirMailbox(mailbox.Mailbox):
         if mymsg.flags == cloudmsg.flags:
             return
 
-        cloud_flags = self._msg_to_flags(cloudmsg)
+        # Preserve flags in the local maildir that are not supported on the
+        # cloud For instance if the cloud can't store replied then we store it
+        # here.
+        unsupported_on_cloud_flags = self.supported_flags & (
+            messages.Message.ALL_FLAGS ^ cloudmsg.mailbox.supported_flags)
+        cloud_flags = ((cloudmsg.flags & cloudmsg.mailbox.supported_flags) |
+                       (mymsg.flags & unsupported_on_cloud_flags))
+        if mymsg.flags == cloudmsg.flags:
+            return
 
+        cloud_flags = self._msg_to_flags(cloud_flags)
         base, mflags, _ = self._decode_msg_filename(mymsg.fn)
         nflags = (mflags - set(("R", "S", "F", "T"))) | cloud_flags
         if mflags == nflags:
