@@ -161,7 +161,7 @@ class GraphAPI(object):
                 f"Goto {self.cfg.web_app.url} in a web browser to authenticate"
             )
             webbrowser.open(url)
-            q = await self.cfg.web_app.auth_redir(url, state)
+            q = await self.cfg.web_app.auth_redir(url, state, redirect_url)
             code = q["code"]
 
             try:

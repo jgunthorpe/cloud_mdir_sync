@@ -8,7 +8,7 @@ from typing import Dict, Optional, Tuple
 import aiohttp
 import pyinotify
 
-from . import config, mailbox, messages, oauth, office365
+from . import config, mailbox, messages, oauth
 
 
 def route_cloud_messages(cfg: config.Config) -> messages.MBoxDict_Type:

@@ -93,6 +93,19 @@ class Config(object):
                                              tenant=account[1]))
         return self.cloud_mboxes[-1]
 
+    def GMail_Account(self, user):
+        """Define a GMail account credential. The user must be specified as a
+        fully qualified Google Account email address. This supports both
+        consumer GMail accounts, and accounts linked to a G-Suite account."""
+        return (user,)
+
+    def GMail(self, label, account):
+        """Create a cloud mailbox for Office365. Mailbox is the name of O365
+        mailbox to use, account should be the result of Office365_Account"""
+        from .gmail import GMailMailbox
+        self.cloud_mboxes.append(GMailMailbox(label, user=account[0]))
+        return self.cloud_mboxes[-1]
+
     def MailDir(self, directory):
         """Create a local maildir to hold messages"""
         from .maildir import MailDirMailbox
