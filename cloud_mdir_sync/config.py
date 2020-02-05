@@ -17,7 +17,7 @@ class Config(object):
     """Program configuration and general global state"""
     message_db_dir = "~/mail/.cms/"
     domains: Dict[str, Any] = {}
-    trace_file: Any
+    trace_file: Any = None
     web_app: "oauth.WebServer"
     logger: logging.Logger
     loop: asyncio.AbstractEventLoop

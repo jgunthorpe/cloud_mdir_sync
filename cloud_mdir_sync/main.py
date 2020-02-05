@@ -125,12 +125,10 @@ def main():
     cfg.load_config(args.CFG)
     cfg.loop = asyncio.get_event_loop()
     with contextlib.closing(pyinotify.WatchManager()) as wm, \
-            contextlib.closing(messages.MessageDB(cfg)) as msgdb, \
-            open("trace", "wb") as trace:
+            contextlib.closing(messages.MessageDB(cfg)) as msgdb:
         pyinotify.AsyncioNotifier(wm, cfg.loop)
         cfg.watch_manager = wm
         cfg.msgdb = msgdb
-        cfg.trace_file = trace
         cfg.loop.run_until_complete(synchronize_mail(cfg))
 
     cfg.loop.run_until_complete(cfg.loop.shutdown_asyncgens())
