@@ -304,7 +304,7 @@ class GMailMessage(messages.Message):
         self.content_hash = mailbox.msgdb.content_hashes_cloud.get(
             self.cid())
         if self.content_hash:
-            self.email_id = mailbox.msgdb.content_msgid[self.content_hash]
+            self.fill_email_id()
         self.gmail_labels = gmail_labels
         if self.gmail_labels:
             self._labels_to_flags()

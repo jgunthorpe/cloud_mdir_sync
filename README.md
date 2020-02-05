@@ -93,6 +93,48 @@ virtual environment. The included 'cloud-mdir-sync' script will automatically
 create the required virtual environment with the needed packages downloaded
 with pip and then run the program from within it.
 
+## Client side filtering
+
+By default CMS supports only a single local MailDir. All cloud mailbox are
+synchronized into it.
+
+With client side filtering multiple local MailDirs can be used and messages
+can be routed into them.
+
+Here is an example of how to download from two cloud accounts into two
+MailDirs:
+
+```python
+gmail_md = MailDir("~/mail/gmail")
+gmail_cloud = GMail("INBOX", GMail_Account(user="user@domain.com"))
+
+o365_md = MailDir("~/mail/o365")
+o365_cloud = Office365("inbox", Office365_Account(user="user@domain.com"))
+
+def direct_message(msg):
+    if msg.mailbox is gmail_cloud:
+        return gmail_md
+    else:
+        return o365_md
+cfg.direct_message = direct_message
+```
+
+Filtering can also inspect message headers, this example will filter messages by
+List-ID:
+
+```python
+def direct_message(msg):
+    list_id = msg.get_header("List-ID")
+    if list_id == "<foo-list>"
+        return foo_md
+    if list_id == "<bar-list>"
+        return bar_md
+    return default_md
+```
+
+All messages must be routed somewhere, they cannot be deleted through
+directing.
+
 # OAUTH2 Authentication
 
 Most cloud providers are now using OAUTH2, and often also provide options to

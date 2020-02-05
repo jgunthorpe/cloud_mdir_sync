@@ -25,9 +25,8 @@ if TYPE_CHECKING:
 
 ContentHash_Type = str
 CID_Type = tuple
-MBoxDict_Type = Dict["mailbox.Mailbox", Dict[ContentHash_Type,
-                                           "Message"]]
 CHMsgDict_Type = Dict[ContentHash_Type, "Message"]
+MBoxDict_Type = Dict["mailbox.Mailbox", CHMsgDict_Type]
 CHMsgMappingDict_Type = Dict[ContentHash_Type, Tuple[Optional["Message"],
                                                      Optional["Message"]]]
 
@@ -42,7 +41,7 @@ class Message(object):
     FLAG_FLAGGED = 1 << 2
     FLAG_DELETED = 1 << 3
     ALL_FLAGS = FLAG_REPLIED | FLAG_READ | FLAG_FLAGGED | FLAG_DELETED
-    fn: str
+    fn: Optional[str] = None
     size: Optional[int]
 
     def __init__(self, mailbox, storage_id, email_id=None):
@@ -65,6 +64,44 @@ class Message(object):
             "email_id": self.email_id
         }
 
+    def _read_header(self, hdr):
+        msgdb = self.mailbox.msgdb
+        if self.fn:
+            fn = self.fn
+        else:
+            assert self.content_hash is not None
+            fn = os.path.join(msgdb.hashes_dir, self.content_hash)
+        with open(fn, "rb") as F:
+            emsg = email.parser.BytesParser().parsebytes(F.read())
+            # Hrm, I wonder if this is the right way to normalize a header?
+            val = emsg.get(hdr)
+            if val is None:
+                return None
+            return re.sub(r"\n[ \t]+", " ", val).strip()
+
+    def fill_email_id(self):
+        """Try to fill in the email_id from our caches or by reading the
+        message itself"""
+        if self.email_id is not None:
+            # Check or cache the email_id provided by the Mailbox
+            content_msg_header = self.mailbox.msgdb.content_msg_header
+            oval = content_msg_header.get((self.content_hash, "message-id"))
+            if oval is None:
+                content_msg_header[(self.content_hash, "message-id")] = oval
+            else:
+                assert oval == self.email_id
+            return
+        self.email_id = self.get_header("message-id")
+
+    def get_header(self, hdr):
+        """Return a email header from a message"""
+        hdr = hdr.lower()
+        content_msg_header = self.mailbox.msgdb.content_msg_header
+        val = content_msg_header.get((self.content_hash, hdr), False)
+        if val is not False:
+            return val
+        val = self._read_header(hdr)
+        content_msg_header[(self.content_hash, hdr)] = val
 
 class MessageDB(object):
     """The persistent state associated with the message database. This holds:
@@ -73,7 +110,7 @@ class MessageDB(object):
     """
     content_hashes: Dict[CID_Type, ContentHash_Type]
     content_hashes_cloud: Dict[CID_Type, ContentHash_Type]
-    content_msgid: Dict[ContentHash_Type, str]
+    content_msg_header: Dict[Tuple[ContentHash_Type, str], str]
     alt_file_hashes: Dict[ContentHash_Type, set]
     inode_hashes: Dict[tuple, ContentHash_Type]
     file_hashes: Set[str]
@@ -88,7 +125,7 @@ class MessageDB(object):
     def __init__(self, cfg: config.Config):
         self.cfg = cfg
         self.content_hashes = {}  # [cid] = content_hash
-        self.content_msgid = {}  # [hash] = message_id
+        self.content_msg_header = {}  # [hash,msg_header] = value
         self.file_hashes = set()
         self.alt_file_hashes = collections.defaultdict(
             set)  # [hash] = set(fns)
@@ -166,7 +203,7 @@ class MessageDB(object):
         for k in blacklist:
             del res[k]
         for cid, ch in res.items():
-            self.content_msgid[ch] = cid[2]
+            self.content_msg_header[ch,"message-id"] = cid[2]
         self.content_hashes = res
 
         # Build a mapping with only the mailbox ID, no message_id
@@ -223,24 +260,6 @@ class MessageDB(object):
         return (msg.content_hash is not None
                 and msg.content_hash in self.file_hashes)
 
-    def _fill_email_id(self, msg, fn):
-        """Try to fill in the email_id from our caches or by reading the
-        message itself"""
-        if msg.email_id is not None:
-            assert self.content_msgid.get(msg.content_hash,
-                                          msg.email_id) == msg.email_id
-            return
-
-        msg.email_id = self.content_msgid.get(msg.content_hash)
-        if msg.email_id is not None:
-            return
-
-        with open(fn, "rb") as F:
-            emsg = email.parser.BytesParser().parsebytes(F.read())
-            # Hrm, I wonder if this is the right way to normalize a header?
-            msg.email_id = re.sub(r"\n[ \t]+", " ",
-                                    emsg["message-id"]).strip()
-
     def msg_from_file(self, msg, fn):
         """Setup msg from a local file, ie in a Maildir. This also records that we
         have this message in the DB"""
@@ -251,10 +270,9 @@ class MessageDB(object):
             msg.content_hash = self._sha1_fn(fn)
             self.inode_hashes[inode] = msg.content_hash
 
-        self._fill_email_id(msg, fn)
-        self.content_msgid[msg.content_hash] = msg.email_id
-        self.alt_file_hashes[msg.content_hash].add(fn)
         msg.fn = fn
+        self.alt_file_hashes[msg.content_hash].add(fn)
+        msg.fill_email_id()
 
     def write_content(self, content_hash, dest_fn):
         """Make the filename dest_fn contain content_hash's content"""
@@ -279,8 +297,8 @@ class MessageDB(object):
             self.inode_hashes[inode] = ch
 
         msg.content_hash = ch
-        self._fill_email_id(msg, fn)
-        self.content_msgid[ch] = msg.email_id
+        assert msg.fn is None
+        msg.fill_email_id()
 
         cid = msg.cid()
         self.content_hashes[msg.cid()] = ch
