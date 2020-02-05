@@ -72,6 +72,7 @@ class MessageDB(object):
         - A set of files of pickles storing the mapping of CID to content_hash
     """
     content_hashes: Dict[CID_Type, ContentHash_Type]
+    content_hashes_cloud: Dict[CID_Type, ContentHash_Type]
     content_msgid: Dict[ContentHash_Type, str]
     alt_file_hashes: Dict[ContentHash_Type, set]
     inode_hashes: Dict[tuple, ContentHash_Type]
@@ -168,6 +169,15 @@ class MessageDB(object):
             self.content_msgid[ch] = cid[2]
         self.content_hashes = res
 
+        # Build a mapping with only the mailbox ID, no message_id
+        no_msg_id: Dict[CID_Type, ContentHash_Type] = {}
+        for cid,ch in res.items():
+            ncid = (cid[0], cid[1], None)
+            if no_msg_id.get(ncid, ch) != ch:
+                ch = ""
+            no_msg_id[ncid] = ch
+        self.content_hashes_cloud = no_msg_id
+
     def _sha1_fn(self, fn):
         return subprocess.check_output(["sha1sum",
                                         fn]).partition(b' ')[0].decode()
@@ -190,7 +200,6 @@ class MessageDB(object):
                 inode = (st.st_ino, st.st_size, st.st_mtime, st.st_ctime)
                 self.inode_hashes[inode] = ch
             else:
-                sys.exit()
                 os.unlink(ffn)
         self.file_hashes.update(hashes)
 
@@ -214,6 +223,24 @@ class MessageDB(object):
         return (msg.content_hash is not None
                 and msg.content_hash in self.file_hashes)
 
+    def _fill_email_id(self, msg, fn):
+        """Try to fill in the email_id from our caches or by reading the
+        message itself"""
+        if msg.email_id is not None:
+            assert self.content_msgid.get(msg.content_hash,
+                                          msg.email_id) == msg.email_id
+            return
+
+        msg.email_id = self.content_msgid.get(msg.content_hash)
+        if msg.email_id is not None:
+            return
+
+        with open(fn, "rb") as F:
+            emsg = email.parser.BytesParser().parsebytes(F.read())
+            # Hrm, I wonder if this is the right way to normalize a header?
+            msg.email_id = re.sub(r"\n[ \t]+", " ",
+                                    emsg["message-id"]).strip()
+
     def msg_from_file(self, msg, fn):
         """Setup msg from a local file, ie in a Maildir. This also records that we
         have this message in the DB"""
@@ -224,18 +251,9 @@ class MessageDB(object):
             msg.content_hash = self._sha1_fn(fn)
             self.inode_hashes[inode] = msg.content_hash
 
-        if msg.email_id is None:
-            msg.email_id = self.content_msgid.get(msg.content_hash)
-        if msg.email_id is None:
-            with open(fn, "rb") as F:
-                emsg = email.parser.BytesParser().parsebytes(F.read())
-                # Hrm, I wonder if this is the right way to normalize a header?
-                msg.email_id = re.sub(r"\n[ \t]+", " ",
-                                      emsg["message-id"]).strip()
-        self.alt_file_hashes[msg.content_hash].add(fn)
-        assert self.content_msgid.get(msg.content_hash,
-                                      msg.email_id) == msg.email_id
+        self._fill_email_id(msg, fn)
         self.content_msgid[msg.content_hash] = msg.email_id
+        self.alt_file_hashes[msg.content_hash].add(fn)
         msg.fn = fn
 
     def write_content(self, content_hash, dest_fn):
@@ -251,9 +269,9 @@ class MessageDB(object):
         """Retain the content tmpf in the hashed file database"""
         tmpf.flush()
         ch = self._sha1_fn(tmpf.name)
+        fn = os.path.join(self.hashes_dir, ch)
         if ch not in self.file_hashes:
             # Adopt the tmpfile into the hashes storage
-            fn = os.path.join(self.hashes_dir, ch)
             os.link(tmpf.name, fn)
             self.file_hashes.add(ch)
             st = os.stat(fn)
@@ -261,10 +279,16 @@ class MessageDB(object):
             self.inode_hashes[inode] = ch
 
         msg.content_hash = ch
-        if msg.email_id is not None:
-            assert self.content_msgid.get(ch, msg.email_id) == msg.email_id
-            self.content_msgid[ch] = msg.email_id
+        self._fill_email_id(msg, fn)
+        self.content_msgid[ch] = msg.email_id
+
+        cid = msg.cid()
         self.content_hashes[msg.cid()] = ch
+        ncid = (cid[0], cid[1], None)
+        if self.content_hashes_cloud.get(ncid, ch) != ch:
+            ch = ""
+        self.content_hashes_cloud[ncid] = ch
+
         assert self.have_content(msg)
         return ch
 
