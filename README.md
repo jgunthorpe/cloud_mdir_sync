@@ -20,9 +20,11 @@ concurrently.
 Although it will function, it has not been optimized for giant email boxes and
 may not perform well.
 
-Currently it operates only in an 'online mode' where the daemon must be
+For safety it operates only in an 'online mode' where the daemon must be
 running. Any local changes made to the mailboxes when the daemon is stopped
-are discarded.
+are discarded. A '--offline' flag will keep changes to flags in the local
+mailbox (but ignores removed maildir files). This is relatively safe but could
+potentially loose flag changes done on the cloud side.
 
 # Microsoft Office365 Cloud Mailbox
 
@@ -48,6 +50,21 @@ flag which causes the server to provide long term stable IDs for the same
 message. This avoids more cases where the messages have to be re-downloaded to
 again match them to local messages.
 
+# Gmail Cloud Mailbox
+
+While Gmail has fairly good IMAP support, and does support OAUTH2 to IMAP, the
+REST interface is a bit more scalable and robust.
+
+CMS uses the [Gmail API](https://developers.google.com/gmail/api/guides) to
+access the mailbox. It can be pointed at any Label in GMail and uses this
+history scheme to optimize updates.
+
+There is no support for push notifications as the Gmail API only considers
+using notification in server/server configurations, not server/client.
+
+The IMAP 'Replied' flag is not supported. The Gmail API does not seem to
+expose this feature.
+
 # Configuration
 
 A small configuration file, written in Python, is used to setup the mailboxes
@@ -61,6 +78,13 @@ MailDir("~/mail/INBOX")
 Office365("inbox", Office365_Account(user="user@domain.com"))
 ```
 
+or with Gmail:
+
+```Python
+MailDir("~/mail/INBOX")
+GMail("INBOX", GMail_Account(user="user@domain.com"))
+```
+
 ## Run from git
 
 CMS requires a fair number of Python modules from PyPI that are not commonly
@@ -72,18 +96,21 @@ with pip and then run the program from within it.
 # OAUTH2 Authentication
 
 Most cloud providers are now using OAUTH2, and often also provide options to
-disable simple password authentication. This is done in the name of security
-as OAUTH is the standards based way to support various MFA schemes. However,
-OAUTH requires an interactive Web Browser to authenticate. This is challanging
-for a Linux environment.
+disable simple password authentication. Both Microsoft and Google have
+announced effective 'end of life' dates for password only 'basic
+authentication'. This is done in the name of security as OAUTH is the
+standards based way to support various MFA schemes. However, OAUTH requires an
+interactive Web Browser to authenticate. This is challanging for a Linux
+environment.
 
-CMS implements this in what has become the common way for a command line
-application. It provides an internal web server which interacts with the
-browser to perform the OAUTH protocol. When interactive authentication is
-required it automatically launches a browser window to handle it. As a public
-application CMS uses the new OAUTH 2.0 Proof Key for Code Exchange (PKCE)
-protocol with the Authorization Code Grant to avoid needing 'client secrets'
-or special service configuration.
+CMS implements this following [RFC 8252](https://tools.ietf.org/html/rfc8252)
+which has become the common way for a command line application to operate. It
+provides an internal web server which interacts with the browser to perform
+the OAUTH protocol. When interactive authentication is required it
+automatically launches a browser window to handle it. As a public application
+CMS uses the new OAUTH 2.0 Proof Key for Code Exchange (PKCE) protocol with
+the Authorization Code Grant to and does not need to keep secret information
+to be secure.
 
 The first time a user does this authentication they will be prompted to permit
 the 'cloud-maildir-sync' application to access their mailbox, in the normal
@@ -114,6 +141,24 @@ re-authentication challenges. However that is only done if a local keyring is
 avaiable. The Python [keyring](https://pypi.org/project/keyring/) module is
 used to store the encryption secret for OAUTH token storage. For Linux desktop
 appications this will automatically use gnome-keyring.
+
+## OAUTH client_id's
+
+OAUTH requires every client to register with the authentication server and get
+a client_id for operation. The authorization server operator can excert quite
+a lot of control over the process of granting a client_id. For instance Google
+requires quite a long review process before they will grant a fully operational
+client_id.
+
+CMS comes included with default client_id's for GMail and Office365. However,
+these IDs are hosted on various personal tenants, and have not necessarily
+been made fully operational. While they are possibly good enough to get
+started with this program, it is possible they will vanish some day, or hit
+thier usage caps.
+
+One might consult other, [more
+popular](https://hg.mozilla.org/comm-central/diff/3f1827133f9d4d20979ba0c11b34005a27461194/mailnews/base/util/OAuth2Providers.jsm),
+open source projects for OAuth client_ids.
 
 # General Operation
 
@@ -176,9 +221,6 @@ set maildir_trash = yes
   Currently push notifications only work for a single mailbox as there is no
   way to determine which mailbox the notification was for unless the
   incremental JSON generated by the long-lived connection is parsed.
-- Support gmail. While gmail has a much better IMAP server than Offce365, it
-  is fairly straight forward to implement its version of a REST protocol to
-  give basically the same capability set.
 - Provide some web-app on 'http://localhost:8080/'. CMS launches a web browser
   using the Python webbrowser module to open a browser window on the URL,
   however this is only functional for desktop cases. Ideally just having a
