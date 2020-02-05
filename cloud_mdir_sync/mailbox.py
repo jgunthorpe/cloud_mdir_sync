@@ -42,9 +42,13 @@ class Mailbox(object):
     messages: "CHMsgDict_Type" = {}
     changed_event = asyncio.Event()
     need_update = True
+    cfg: "config.Config"
+
+    def __init__(self, cfg: "config.Config"):
+        self.cfg = cfg
 
     @abstractmethod
-    async def setup_mbox(self, cfg: "config.Config") -> None:
+    async def setup_mbox(self) -> None:
         pass
 
     @abstractmethod

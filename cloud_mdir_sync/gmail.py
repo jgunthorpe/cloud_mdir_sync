@@ -344,21 +344,20 @@ class GMailMailbox(mailbox.Mailbox):
                        | messages.Message.FLAG_FLAGGED
                        | messages.Message.FLAG_DELETED)
     timer = None
-    cfg: config.Config
     gmail: GmailAPI
     gmail_messages: Dict[str, GMailMessage]
     history_delta = None
     delete_action = "archive" # or delete
 
-    def __init__(self, label: str, user: str):
-        super().__init__()
+    def __init__(self, cfg: config.Config, label: str, user: str):
+        super().__init__(cfg)
         self.label_name = label
         self.user = user
         self.gmail_messages = {}
 
-    async def setup_mbox(self, cfg: config.Config):
+    async def setup_mbox(self):
         """Setup access to the authenticated API domain for this endpoint"""
-        self.cfg = cfg
+        cfg = self.cfg
         did = f"gmail-{self.user}"
         self.name = f"{self.user}:{self.label_name}"
         gmail = cfg.domains.get(did)

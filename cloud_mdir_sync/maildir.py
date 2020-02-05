@@ -24,15 +24,14 @@ class MailDirMailbox(mailbox.Mailbox):
                        | messages.Message.FLAG_DELETED)
     cfg: config.Config
 
-    def __init__(self, directory):
-        super().__init__()
+    def __init__(self, cfg: config.Config, directory: str):
+        super().__init__(cfg)
         self.dfn = os.path.expanduser(directory)
         for sub in ["tmp", "cur", "new"]:
             os.makedirs(os.path.join(self.dfn, sub), mode=0o700, exist_ok=True)
 
-    async def setup_mbox(self, cfg: config.Config):
-        self.cfg = cfg
-        cfg.watch_manager.add_watch(
+    async def setup_mbox(self):
+        self.cfg.watch_manager.add_watch(
             path=[
                 os.path.join(self.dfn, "cur"),
                 os.path.join(self.dfn, "new")

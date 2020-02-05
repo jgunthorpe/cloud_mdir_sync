@@ -362,21 +362,21 @@ class O365Mailbox(mailbox.Mailbox):
     loop: asyncio.AbstractEventLoop
     timer = None
     use_owa_subscribe = True
-    cfg: config.Config
     graph: GraphAPI
 
     def __init__(self,
+                 cfg: config.Config,
                  mailbox: str,
                  user: Optional[str] = None,
                  tenant="common"):
-        super().__init__()
+        super().__init__(cfg)
         self.mailbox = mailbox
         self.tenant = tenant
         self.user = user
 
-    async def setup_mbox(self, cfg: config.Config):
+    async def setup_mbox(self):
         """Setup access to the authenticated API domain for this endpoint"""
-        self.cfg = cfg
+        cfg = self.cfg
         self.loop = cfg.loop
         did = f"o365-{self.user}-{self.tenant}"
         graph = cfg.domains.get(did)

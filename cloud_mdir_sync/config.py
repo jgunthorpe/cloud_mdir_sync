@@ -89,8 +89,8 @@ class Config(object):
         """Create a cloud mailbox for Office365. Mailbox is the name of O365
         mailbox to use, account should be the result of Office365_Account"""
         from .office365 import O365Mailbox
-        self.cloud_mboxes.append(O365Mailbox(mailbox, user=account[0],
-                                             tenant=account[1]))
+        self.cloud_mboxes.append(
+            O365Mailbox(self, mailbox, user=account[0], tenant=account[1]))
         return self.cloud_mboxes[-1]
 
     def GMail_Account(self, user):
@@ -103,13 +103,13 @@ class Config(object):
         """Create a cloud mailbox for Office365. Mailbox is the name of O365
         mailbox to use, account should be the result of Office365_Account"""
         from .gmail import GMailMailbox
-        self.cloud_mboxes.append(GMailMailbox(label, user=account[0]))
+        self.cloud_mboxes.append(GMailMailbox(self, label, user=account[0]))
         return self.cloud_mboxes[-1]
 
     def MailDir(self, directory):
         """Create a local maildir to hold messages"""
         from .maildir import MailDirMailbox
-        self.local_mboxes.append(MailDirMailbox(directory))
+        self.local_mboxes.append(MailDirMailbox(self, directory))
         return self.local_mboxes[-1]
 
     def _direct_message(self, msg):

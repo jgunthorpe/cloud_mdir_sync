@@ -59,7 +59,7 @@ async def synchronize_mail(cfg: config.Config):
     try:
         await cfg.web_app.go()
 
-        await asyncio.gather(*(mbox.setup_mbox(cfg)
+        await asyncio.gather(*(mbox.setup_mbox()
                                for mbox in cfg.all_mboxes()))
 
         msgs = None
