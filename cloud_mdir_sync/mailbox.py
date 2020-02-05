@@ -52,13 +52,16 @@ class Mailbox(object):
         pass
 
     @abstractmethod
-    def force_content(self, msgdb: "MessageDB",
-                      msgs: "CHMsgDict_Type") -> None:
+    def force_content(self, msgs: "CHMsgDict_Type") -> None:
         pass
 
     @abstractmethod
     async def merge_content(self, msgs: "CHMsgMappingDict_Type") -> None:
         pass
+
+    @property
+    def msgdb(self) -> "MessageDB":
+        return self.cfg.msgdb
 
     def same_messages(self,
                       mdict: "CHMsgMappingDict_Type",

@@ -28,7 +28,7 @@ def force_local_to_cloud(cfg: config.Config, msgs: messages.MBoxDict_Type):
     local changes."""
     for mbox, msgdict in msgs.items():
         if not mbox.same_messages(msgdict):
-            mbox.force_content(cfg.msgdb, msgdict)
+            mbox.force_content(msgdict)
     return msgs
 
 
@@ -65,7 +65,7 @@ async def synchronize_mail(cfg: config.Config):
         msgs = None
         while True:
             try:
-                await asyncio.gather(*(mbox.update_message_list(cfg.msgdb)
+                await asyncio.gather(*(mbox.update_message_list()
                                        for mbox in cfg.all_mboxes()
                                        if mbox.need_update))
 

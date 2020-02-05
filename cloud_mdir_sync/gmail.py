@@ -301,10 +301,10 @@ class GMailMessage(messages.Message):
         # GMail does not return the email_id, but it does have a stable REST
         # ID, so if we have the REST ID in the database then we can compute
         # the email_id
-        self.content_hash = mailbox.cfg.msgdb.content_hashes_cloud.get(
+        self.content_hash = mailbox.msgdb.content_hashes_cloud.get(
             self.cid())
         if self.content_hash:
-            self.email_id = mailbox.cfg.msgdb.content_msgid[self.content_hash]
+            self.email_id = mailbox.msgdb.content_msgid[self.content_hash]
         self.gmail_labels = gmail_labels
         if self.gmail_labels:
             self._labels_to_flags()
@@ -385,8 +385,8 @@ class GMailMailbox(mailbox.Mailbox):
         msg.update_from_json(jmsg)
         return jmsg["historyId"]
 
-    async def _fetch_message(self, msg: GMailMessage,
-                             msgdb: messages.MessageDB):
+    async def _fetch_message(self, msg: GMailMessage):
+        msgdb = self.msgdb
         with util.log_progress_ctx(logging.DEBUG,
                                    f"Downloading {msg.storage_id}",
                                    lambda msg: f" {util.sizeof_fmt(msg.size)}",
@@ -405,7 +405,7 @@ class GMailMailbox(mailbox.Mailbox):
             msg.content_hash = msgdb.store_hashed_msg(msg, F)
         return jmsg["historyId"]
 
-    async def _fetch_all_messages(self, msgdb: messages.MessageDB):
+    async def _fetch_all_messages(self):
         """Perform a full synchronization of the mailbox"""
         start_history_id = None
         todo = []
@@ -416,9 +416,9 @@ class GMailMailbox(mailbox.Mailbox):
                 key="messages",
                 params={"labelIds": self.label}):
             msg = GMailMessage(mailbox=self, gmail_id=jmsg["id"])
-            if not msgdb.have_content(msg):
+            if not self.msgdb.have_content(msg):
                 todo.append(
-                    asyncio.create_task(self._fetch_message(msg, msgdb)))
+                    asyncio.create_task(self._fetch_message(msg)))
             else:
                 todo.append(asyncio.create_task(self._fetch_metadata(msg)))
             msgs.append(msg)
@@ -429,8 +429,6 @@ class GMailMailbox(mailbox.Mailbox):
         return (msgs, start_history_id)
 
     async def _fetch_delta_messages(self, old_msgs: List[GMailMessage],
-                                    start_history_id: Optional[str],
-                                    msgdb: messages.MessageDB):
                                     start_history_id: Optional[str]):
         # Mailbox is empty
         if start_history_id is None:
@@ -495,9 +493,9 @@ class GMailMailbox(mailbox.Mailbox):
                 msg = GMailMessage(mailbox=self,
                                    gmail_id=gmail_id,
                                    gmail_labels=gmail_labels)
-                if not msgdb.have_content(msg):
+                if not self.msgdb.have_content(msg):
                     todo.append(
-                        asyncio.create_task(self._fetch_message(msg, msgdb)))
+                        asyncio.create_task(self._fetch_message(msg)))
                 else:
                     todo.append(asyncio.create_task(self._fetch_metadata(msg)))
             else:
@@ -505,7 +503,7 @@ class GMailMailbox(mailbox.Mailbox):
                                    gmail_id=gmail_id,
                                    gmail_labels=gmail_labels)
                 msg.received_time = omsg.received_time
-                assert msgdb.have_content(msg)
+                assert self.msgdb.have_content(msg)
             msgs.append(msg)
         await asyncio.gather(*todo)
         return (msgs, next_history_id)
@@ -513,19 +511,18 @@ class GMailMailbox(mailbox.Mailbox):
     @util.log_progress(lambda self: f"Updating Message List for {self.name}",
                        lambda self: f", {len(self.messages)} msgs")
     @mailbox.update_on_failure
-    async def update_message_list(self, msgdb: messages.MessageDB):
+    async def update_message_list(self):
         """Retrieve the list of all messages and store all the message content
         in the content_hash message database"""
         if self.history_delta is None or self.history_delta[1] is None:
             # For whatever reason, there is usually more history than is
             # suggested by the history_id from the messages.list, so always
             # drain it out.
-            self.history_delta = await self._fetch_all_messages(msgdb)
+            self.history_delta = await self._fetch_all_messages()
 
         self.history_delta = await self._fetch_delta_messages(
             start_history_id=self.history_delta[1],
-            old_msgs=self.history_delta[0],
-            msgdb=msgdb)
+            old_msgs=self.history_delta[0])
 
         self.messages = {
             msg.content_hash: msg
@@ -541,7 +538,7 @@ class GMailMailbox(mailbox.Mailbox):
         self.need_update = True
         self.changed_event.set()
 
-    def force_content(self, msgdb, msgs):
+    def force_content(self, msgs):
         raise RuntimeError("Cannot move messages into the Cloud")
 
     def _update_msg_flags(self, cmsg: messages.Message, old_cmsg_flags: int,

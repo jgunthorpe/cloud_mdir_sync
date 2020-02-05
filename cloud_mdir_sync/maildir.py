@@ -81,32 +81,32 @@ class MailDirMailbox(mailbox.Mailbox):
         assert ":2," not in fn
         return (fn, flags, mflags)
 
-    def _load_message(self, msgdb: messages.MessageDB, fn, ffn):
+    def _load_message(self, fn, ffn):
         sid, _, mflags = self._decode_msg_filename(fn)
         msg = messages.Message(mailbox=self, storage_id=sid)
         msg.flags = mflags
-        msgdb.msg_from_file(msg, ffn)
+        self.msgdb.msg_from_file(msg, ffn)
         return msg
 
-    def _update_message_dir(self, res, msgdb: messages.MessageDB, dfn):
+    def _update_message_dir(self, res, dfn):
         for fn in os.listdir(dfn):
             if fn.startswith("."):
                 continue
-            msg = self._load_message(msgdb, fn, os.path.join(dfn, fn))
+            msg = self._load_message(fn, os.path.join(dfn, fn))
             res[msg.content_hash] = msg
 
     @util.log_progress(lambda self: f"Updating Message List for {self.dfn}",
                        lambda self: f", {len(self.messages)} msgs",
                        level=logging.DEBUG)
     @mailbox.update_on_failure
-    async def update_message_list(self, msgdb: messages.MessageDB):
+    async def update_message_list(self):
         """Read the message list from the maildir and compute the content hashes"""
         res: messages.CHMsgDict_Type = {}
         st = {}
         for sd in ["cur", "new"]:
             st[sd] = os.stat(os.path.join(self.dfn, sd))
         for sd in ["cur", "new"]:
-            self._update_message_dir(res, msgdb, os.path.join(self.dfn, sd))
+            self._update_message_dir(res, os.path.join(self.dfn, sd))
         for sd in ["cur", "new"]:
             fn = os.path.join(self.dfn, sd)
             # Retry if the dirs changed while trying to read them
@@ -131,8 +131,7 @@ class MailDirMailbox(mailbox.Mailbox):
             fn = os.path.join(self.dfn, "new", base)
         return base, fn
 
-    def _store_msg(self, msgdb: messages.MessageDB,
-                   cloudmsg: messages.Message):
+    def _store_msg(self, cloudmsg: messages.Message):
         """Apply a delta from the cloud: New message from cloud"""
         sid, fn = self._new_maildir_id(cloudmsg)
         msg = messages.Message(mailbox=self,
@@ -143,7 +142,7 @@ class MailDirMailbox(mailbox.Mailbox):
         assert msg.content_hash is not None
         msg.fn = fn
 
-        msgdb.write_content(cloudmsg.content_hash, msg.fn)
+        self.msgdb.write_content(cloudmsg.content_hash, msg.fn)
 
         # It isn't clear if we need to do this, but make the local timestamps
         # match when the message would have been received if the local MTA
@@ -192,7 +191,7 @@ class MailDirMailbox(mailbox.Mailbox):
         f", {self.last_force_new} added, {self.last_force_rm} removed, {self.last_force_kept} same"
     )
     @mailbox.update_on_failure
-    def force_content(self, msgdb: messages.MessageDB, msgs: messages.CHMsgDict_Type):
+    def force_content(self, msgs: messages.CHMsgDict_Type):
         """Force this mailbox to contain the message list msgs (from cloud), including
         all the flags and state"""
         self.last_force_kept = 0
@@ -208,7 +207,7 @@ class MailDirMailbox(mailbox.Mailbox):
 
         for content_hash in want - have:
             self.last_force_new += 1
-            self._store_msg(msgdb, msgs[content_hash])
+            self._store_msg(msgs[content_hash])
 
         for content_hash in have - want:
             self.last_force_rm += 1

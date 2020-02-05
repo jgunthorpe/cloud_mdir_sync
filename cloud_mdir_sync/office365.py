@@ -401,8 +401,8 @@ class O365Mailbox(mailbox.Mailbox):
             asyncio.create_task(self._monitor_changes())
 
     @mailbox.update_on_failure
-    async def _fetch_message(self, msg: messages.Message,
-                             msgdb: messages.MessageDB):
+    async def _fetch_message(self, msg: messages.Message):
+        msgdb = self.msgdb
         with util.log_progress_ctx(logging.DEBUG,
                                    f"Downloading {msg.email_id}",
                                    lambda msg: f" {util.sizeof_fmt(msg.size)}",
@@ -459,7 +459,7 @@ class O365Mailbox(mailbox.Mailbox):
     @util.log_progress(lambda self: f"Updating Message List for {self.name}",
                        lambda self: f", {len(self.messages)} msgs")
     @mailbox.update_on_failure
-    async def update_message_list(self, msgdb: messages.MessageDB):
+    async def update_message_list(self):
         """Retrieve the list of all messages and store all the message content in the
         content_hash message database"""
         todo = []
@@ -483,9 +483,9 @@ class O365Mailbox(mailbox.Mailbox):
                 jmsg["receivedDateTime"], '%Y-%m-%dT%H:%M:%SZ')
             msg.flags = self._json_to_flags(jmsg)
 
-            if not msgdb.have_content(msg):
+            if not self.msgdb.have_content(msg):
                 todo.append(
-                    asyncio.create_task(self._fetch_message(msg, msgdb)))
+                    asyncio.create_task(self._fetch_message(msg)))
 
             msgs.append(msg)
         await asyncio.gather(*todo)
@@ -539,7 +539,7 @@ class O365Mailbox(mailbox.Mailbox):
         self.need_update = True
         self.changed_event.set()
 
-    def force_content(self, msgdb, msgs):
+    def force_content(self, msgs):
         raise RuntimeError("Cannot move messages into the Cloud")
 
     def _update_msg_flags(self, cmsg: messages.Message,
@@ -639,7 +639,7 @@ class O365Mailbox(mailbox.Mailbox):
 
             # Debugging that the message really is to be deleted
             if cmsg is not None and lmsg is None:
-                assert os.stat(os.path.join(self.cfg.msgdb.hashes_dir,
+                assert os.stat(os.path.join(self.msgdb.hashes_dir,
                                             ch)).st_nlink == 1
 
             if cmsg is not None and (lmsg is None or lmsg.flags
