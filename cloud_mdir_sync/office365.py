@@ -13,6 +13,7 @@ import aiohttp
 import requests
 
 from . import config, mailbox, messages, util
+from .util import asyncio_complete
 
 
 def _retry_protect(func):
@@ -488,7 +489,7 @@ class O365Mailbox(mailbox.Mailbox):
                     asyncio.create_task(self._fetch_message(msg)))
 
             msgs.append(msg)
-        await asyncio.gather(*todo)
+        await asyncio_complete(*todo)
 
         res = {}
         for msg in msgs:
@@ -652,8 +653,8 @@ class O365Mailbox(mailbox.Mailbox):
                         body={"destinationId": "deleteditems"}))
                 del self.messages[ch]
 
-        await asyncio.gather(*todo_flags)
+        await asyncio_complete(*todo_flags)
         # Delete must be temporally after move as move will change the mailbox
         # id.
-        await asyncio.gather(*todo_del)
+        await asyncio_complete(*todo_del)
         self.last_merge_len = len(todo_flags) + len(todo_del)

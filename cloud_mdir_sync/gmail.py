@@ -15,6 +15,7 @@ import oauthlib
 import requests_oauthlib
 
 from . import config, mailbox, messages, util
+from .util import asyncio_complete
 
 
 class NativePublicApplicationClient(oauthlib.oauth2.WebApplicationClient):
@@ -424,7 +425,7 @@ class GMailMailbox(mailbox.Mailbox):
             msgs.append(msg)
         if todo:
             start_history_id = await todo[0]
-        await asyncio.gather(*todo)
+        await asyncio_complete(*todo)
 
         return (msgs, start_history_id)
 
@@ -505,7 +506,7 @@ class GMailMailbox(mailbox.Mailbox):
                 msg.received_time = omsg.received_time
                 assert self.msgdb.have_content(msg)
             msgs.append(msg)
-        await asyncio.gather(*todo)
+        await asyncio_complete(*todo)
         return (msgs, next_history_id)
 
     @util.log_progress(lambda self: f"Updating Message List for {self.name}",

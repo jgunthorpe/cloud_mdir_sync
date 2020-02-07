@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0+
+import asyncio
 import contextlib
 import functools
 import inspect
@@ -68,3 +69,15 @@ def sizeof_fmt(num, suffix='B'):
 
 def pj(json_dict):
     print(json.dumps(json_dict, indent=4, sort_keys=True))
+
+
+async def asyncio_complete(*awo_list):
+    """This is like asyncio.gather but it always ensures that the list of
+    awaitable objects is completed upon return. For instance if an exception
+    is thrown then all the awaitables are canceled"""
+    g = asyncio.gather(*awo_list)
+    try:
+        await g
+    finally:
+        g.cancel()
+        await asyncio.gather(*awo_list, return_exceptions=True)

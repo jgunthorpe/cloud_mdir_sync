@@ -9,6 +9,7 @@ import aiohttp
 import pyinotify
 
 from . import config, mailbox, messages, oauth
+from .util import asyncio_complete
 
 
 def route_cloud_messages(cfg: config.Config) -> messages.MBoxDict_Type:
@@ -48,7 +49,7 @@ async def update_cloud_from_local(cfg: config.Config,
             if lmsg is None and offline_mode:
                 continue
             msgs_by_cloud[cloud_msg.mailbox][ch] = (lmsg, cloud_msg)
-    await asyncio.gather(*(
+    await asyncio_complete(*(
         mbox.merge_content(msgdict) for mbox, msgdict in msgs_by_cloud.items()
         if not mbox.same_messages(msgdict, tuple_form=True)))
 
@@ -59,15 +60,15 @@ async def synchronize_mail(cfg: config.Config):
     try:
         await cfg.web_app.go()
 
-        await asyncio.gather(*(mbox.setup_mbox()
-                               for mbox in cfg.all_mboxes()))
+        await asyncio_complete(*(mbox.setup_mbox()
+                                 for mbox in cfg.all_mboxes()))
 
         msgs = None
         while True:
             try:
-                await asyncio.gather(*(mbox.update_message_list()
-                                       for mbox in cfg.all_mboxes()
-                                       if mbox.need_update))
+                await asyncio_complete(*(mbox.update_message_list()
+                                         for mbox in cfg.all_mboxes()
+                                         if mbox.need_update))
 
                 nmsgs = route_cloud_messages(cfg)
                 if msgs is not None:
@@ -92,8 +93,8 @@ async def synchronize_mail(cfg: config.Config):
             cfg.msgdb.cleanup_msgs(msgs)
             cfg.logger.debug("Changed event, looping")
     finally:
-        await asyncio.gather(*(domain.close()
-                               for domain in cfg.domains.values()))
+        await asyncio_complete(*(domain.close()
+                                 for domain in cfg.domains.values()))
         cfg.domains = {}
         await cfg.web_app.close()
 
