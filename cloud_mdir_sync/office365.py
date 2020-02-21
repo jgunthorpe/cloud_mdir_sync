@@ -404,6 +404,7 @@ class O365Mailbox(mailbox.Mailbox):
     @mailbox.update_on_failure
     async def _fetch_message(self, msg: messages.Message):
         msgdb = self.msgdb
+        msg.size = 0
         with util.log_progress_ctx(logging.DEBUG,
                                    f"Downloading {msg.email_id}",
                                    lambda msg: f" {util.sizeof_fmt(msg.size)}",

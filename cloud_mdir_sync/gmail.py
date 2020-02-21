@@ -388,6 +388,7 @@ class GMailMailbox(mailbox.Mailbox):
 
     async def _fetch_message(self, msg: GMailMessage):
         msgdb = self.msgdb
+        msg.size = 0
         with util.log_progress_ctx(logging.DEBUG,
                                    f"Downloading {msg.storage_id}",
                                    lambda msg: f" {util.sizeof_fmt(msg.size)}",
