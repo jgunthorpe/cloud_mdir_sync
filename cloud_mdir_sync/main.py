@@ -3,6 +3,7 @@ import argparse
 import asyncio
 import contextlib
 import os
+import subprocess
 from typing import Dict, Optional, Tuple
 
 import aiohttp
@@ -82,7 +83,7 @@ async def synchronize_mail(cfg: config.Config):
                 msgs = nmsgs
             except (FileNotFoundError, asyncio.TimeoutError,
                     aiohttp.client_exceptions.ClientError, IOError,
-                    RuntimeError):
+                    RuntimeError, subprocess.CalledProcessError):
                 cfg.logger.exception(
                     "Failed update cycle, sleeping then retrying")
                 await asyncio.sleep(10)
