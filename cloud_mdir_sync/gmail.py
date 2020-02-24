@@ -409,7 +409,9 @@ class GMailMailbox(mailbox.Mailbox):
 
     async def _fetch_all_messages(self):
         """Perform a full synchronization of the mailbox"""
-        start_history_id = None
+        profile = await self.gmail.get_json("v1","/users/me/profile")
+        start_history_id = profile["historyId"]
+
         todo = []
         msgs = []
         async for jmsg in self.gmail.get_json_paged(
@@ -424,8 +426,6 @@ class GMailMailbox(mailbox.Mailbox):
             else:
                 todo.append(asyncio.create_task(self._fetch_metadata(msg)))
             msgs.append(msg)
-        if todo:
-            start_history_id = await todo[0]
         await asyncio_complete(*todo)
 
         return (msgs, start_history_id)
@@ -516,15 +516,21 @@ class GMailMailbox(mailbox.Mailbox):
     async def update_message_list(self):
         """Retrieve the list of all messages and store all the message content
         in the content_hash message database"""
-        if self.history_delta is None or self.history_delta[1] is None:
+        if self.history_delta is None:
             # For whatever reason, there is usually more history than is
             # suggested by the history_id from the messages.list, so always
             # drain it out.
             self.history_delta = await self._fetch_all_messages()
 
-        self.history_delta = await self._fetch_delta_messages(
-            start_history_id=self.history_delta[1],
-            old_msgs=self.history_delta[0])
+        try:
+            self.history_delta = await self._fetch_delta_messages(
+                start_history_id=self.history_delta[1],
+                old_msgs=self.history_delta[0])
+        except:
+            # If we fail to read a delta then the history is lost/garbage,
+            # start again from full sync.
+            self.history_delta = None;
+            raise
 
         self.messages = {
             msg.content_hash: msg
