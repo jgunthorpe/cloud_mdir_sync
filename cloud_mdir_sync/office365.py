@@ -364,6 +364,7 @@ class O365Mailbox(mailbox.Mailbox):
     timer = None
     use_owa_subscribe = True
     graph: GraphAPI
+    delete_action = "archive" # or delete
 
     def __init__(self,
                  cfg: config.Config,
@@ -651,7 +652,11 @@ class O365Mailbox(mailbox.Mailbox):
                     self.graph.post_json(
                         "v1.0",
                         f"/me/mailFolders/{self.mailbox}/messages/{cmsg.storage_id}/move",
-                        body={"destinationId": "deleteditems"}))
+                        body={
+                            "destinationId":
+                            "deleteditems"
+                            if self.delete_action == "delete" else "archive"
+                        }))
                 del self.messages[ch]
 
         await asyncio_complete(*todo_flags)
