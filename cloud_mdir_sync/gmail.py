@@ -118,17 +118,20 @@ class GmailAPI(object):
     authenticator = None
     headers: Optional[Dict[str, str]] = None
 
-    def __init__(self, cfg: config.Config, domain_id: str, user: str):
-        self.domain_id = domain_id
+    def __init__(self, cfg: config.Config, user: str):
+        self.domain_id = f"gmail-{user}"
         self.cfg = cfg
         self.user = user
+
+    async def go(self):
+        cfg = self.cfg
 
         connector = aiohttp.connector.TCPConnector(limit=20, limit_per_host=5)
         self.session = aiohttp.ClientSession(connector=connector,
                                              raise_for_status=False)
 
         self.redirect_url = cfg.web_app.url + "oauth2/gmail"
-        self.api_token = cfg.msgdb.get_authenticator(domain_id)
+        self.api_token = cfg.msgdb.get_authenticator(self.domain_id)
         self.oauth = requests_oauthlib.OAuth2Session(
             client_id=self.client_id,
             client=NativePublicApplicationClient(self.client_id),
@@ -350,23 +353,15 @@ class GMailMailbox(mailbox.Mailbox):
     history_delta = None
     delete_action = "archive" # or delete
 
-    def __init__(self, cfg: config.Config, label: str, user: str):
+    def __init__(self, cfg: config.Config, label: str, gmail: GmailAPI):
         super().__init__(cfg)
         self.label_name = label
-        self.user = user
+        self.gmail = gmail
         self.gmail_messages = {}
 
     async def setup_mbox(self):
         """Setup access to the authenticated API domain for this endpoint"""
-        cfg = self.cfg
-        did = f"gmail-{self.user}"
-        self.name = f"{self.user}:{self.label_name}"
-        gmail = cfg.domains.get(did)
-        if gmail is None:
-            self.gmail = GmailAPI(cfg, did, self.user)
-            cfg.domains[did] = self.gmail
-        else:
-            self.gmail = gmail
+        self.name = f"{self.gmail.user}:{self.label_name}"
 
         # Verify the label exists
         jmsg = await self.gmail.get_json("v1", f"/users/me/labels")

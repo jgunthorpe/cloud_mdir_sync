@@ -78,37 +78,37 @@ class GraphAPI(object):
     owa_token = None
     authenticator = None
 
-    def __init__(self, cfg, domain_id, user, tenant):
-        import msal
-        self.msl_cache = msal.SerializableTokenCache()
-        auth = cfg.msgdb.get_authenticator(domain_id)
-        if auth is not None:
-            self.msl_cache.deserialize(auth)
-
-        self.domain_id = domain_id
+    def __init__(self, cfg: config.Config, user: str, tenant: str):
+        self.domain_id = f"o365-{user}-{tenant}"
         self.cfg = cfg
         self.user = user
-        self.web_app = cfg.web_app
+        self.tenant = tenant
 
         if self.user is not None:
             self.name = f"{self.user}//{tenant}"
         else:
             self.name = f"//{tenant}"
 
-        connector = aiohttp.connector.TCPConnector(limit=20, limit_per_host=5)
-        self.session = aiohttp.ClientSession(connector=connector,
-                                             raise_for_status=False)
-        self.headers = {}
-        self.owa_headers = {}
-
         # Use the new format much more immutable ids, this will work better
         # with our caching scheme. See
         # https://docs.microsoft.com/en-us/graph/outlook-immutable-id
-        self.headers["Prefer"] = 'IdType="ImmutableId"'
+        self.headers= {"Prefer": 'IdType="ImmutableId"'}
+        self.owa_headers = {}
+
+    async def go(self):
+        import msal
+        self.msl_cache = msal.SerializableTokenCache()
+        auth = self.cfg.msgdb.get_authenticator(self.domain_id)
+        if auth is not None:
+            self.msl_cache.deserialize(auth)
+
+        connector = aiohttp.connector.TCPConnector(limit=20, limit_per_host=5)
+        self.session = aiohttp.ClientSession(connector=connector,
+                                             raise_for_status=False)
 
         self.msal = msal.PublicClientApplication(
             client_id="122f4826-adf9-465d-8e84-e9d00bc9f234",
-            authority=f"https://login.microsoftonline.com/{tenant}",
+            authority=f"https://login.microsoftonline.com/{self.tenant}",
             token_cache=self.msl_cache)
 
     def _cached_authenticate(self):
@@ -150,7 +150,7 @@ class GraphAPI(object):
             self.graph_token = None
             self.owa_token = None
 
-            redirect_url = self.web_app.url + "oauth2/msal"
+            redirect_url = self.cfg.web_app.url + "oauth2/msal"
             state = hex(id(self)) + secrets.token_urlsafe(8)
             url = self.msal.get_authorization_request_url(
                 scopes=self.graph_scopes + self.owa_scopes,
@@ -369,25 +369,15 @@ class O365Mailbox(mailbox.Mailbox):
     def __init__(self,
                  cfg: config.Config,
                  mailbox: str,
-                 user: Optional[str] = None,
-                 tenant="common"):
+                 graph: GraphAPI):
         super().__init__(cfg)
         self.mailbox = mailbox
-        self.tenant = tenant
-        self.user = user
+        self.graph = graph
 
     async def setup_mbox(self):
         """Setup access to the authenticated API domain for this endpoint"""
         cfg = self.cfg
         self.loop = cfg.loop
-        did = f"o365-{self.user}-{self.tenant}"
-        graph = cfg.domains.get(did)
-        if graph is None:
-            self.graph = GraphAPI(cfg, did, self.user, self.tenant)
-            cfg.domains[did] = self.graph
-        else:
-            self.graph = graph
-
         self.name = f"{self.graph.name}:{self.mailbox}"
 
         json = await self.graph.get_json(

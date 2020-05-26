@@ -16,7 +16,6 @@ logger: logging.Logger
 class Config(object):
     """Program configuration and general global state"""
     message_db_dir = "~/mail/.cms/"
-    domains: Dict[str, Any] = {}
     trace_file: Any = None
     web_app: "oauth.WebServer"
     logger: logging.Logger
@@ -42,6 +41,7 @@ class Config(object):
         self._create_logger()
         self.cloud_mboxes = []
         self.local_mboxes = []
+        self.async_tasks = []
         self.message_db_dir = os.path.expanduser(self.message_db_dir)
         self.direct_message = self._direct_message
 
@@ -83,27 +83,31 @@ class Config(object):
         then the browser will prompt for the user and the choice will be
         cached. To lock the account to a single tenant specify the Azure
         Directory name, ie 'contoso.onmicrosoft.com', or the GUID."""
-        return (user,tenant)
+        from .office365 import GraphAPI
+        self.async_tasks.append(GraphAPI(self, user, tenant))
+        return self.async_tasks[-1]
 
     def Office365(self, mailbox, account):
         """Create a cloud mailbox for Office365. Mailbox is the name of O365
         mailbox to use, account should be the result of Office365_Account"""
         from .office365 import O365Mailbox
         self.cloud_mboxes.append(
-            O365Mailbox(self, mailbox, user=account[0], tenant=account[1]))
+            O365Mailbox(self, mailbox, account))
         return self.cloud_mboxes[-1]
 
     def GMail_Account(self, user):
         """Define a GMail account credential. The user must be specified as a
         fully qualified Google Account email address. This supports both
         consumer GMail accounts, and accounts linked to a G-Suite account."""
-        return (user,)
+        from .gmail import GmailAPI
+        self.async_tasks.append(GmailAPI(self, user))
+        return self.async_tasks[-1]
 
     def GMail(self, label, account):
         """Create a cloud mailbox for Office365. Mailbox is the name of O365
         mailbox to use, account should be the result of Office365_Account"""
         from .gmail import GMailMailbox
-        self.cloud_mboxes.append(GMailMailbox(self, label, user=account[0]))
+        self.cloud_mboxes.append(GMailMailbox(self, label, account))
         return self.cloud_mboxes[-1]
 
     def MailDir(self, directory):

@@ -58,9 +58,9 @@ async def update_cloud_from_local(cfg: config.Config,
 async def synchronize_mail(cfg: config.Config):
     """Main synchronizing loop"""
     cfg.web_app = oauth.WebServer()
+    cfg.async_tasks.append(cfg.web_app)
     try:
-        await cfg.web_app.go()
-
+        await asyncio_complete(*(I.go() for I in cfg.async_tasks))
         await asyncio_complete(*(mbox.setup_mbox()
                                  for mbox in cfg.all_mboxes()))
 
@@ -94,10 +94,8 @@ async def synchronize_mail(cfg: config.Config):
             cfg.msgdb.cleanup_msgs(msgs)
             cfg.logger.debug("Changed event, looping")
     finally:
-        await asyncio_complete(*(domain.close()
-                                 for domain in cfg.domains.values()))
-        cfg.domains = {}
-        await cfg.web_app.close()
+        for I in cfg.async_tasks:
+            await I.close()
 
 
 def main():
