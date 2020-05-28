@@ -14,7 +14,7 @@ import aiohttp
 import oauthlib
 import requests_oauthlib
 
-from . import config, mailbox, messages, util
+from . import config, mailbox, messages, oauth, util
 from .util import asyncio_complete
 
 
@@ -108,7 +108,7 @@ def _retry_protect(func):
     return async_wrapper
 
 
-class GmailAPI(object):
+class GmailAPI(oauth.Account):
     """An OAUTH2 authenticated session to the Google gmail API"""
     # From ziepe.ca
     client_id = "14979213351-bik90v3b8b9f22160ura3oah71u3l113.apps.googleusercontent.com"
@@ -119,9 +119,8 @@ class GmailAPI(object):
     headers: Optional[Dict[str, str]] = None
 
     def __init__(self, cfg: config.Config, user: str):
+        super().__init__(cfg, user)
         self.domain_id = f"gmail-{user}"
-        self.cfg = cfg
-        self.user = user
 
     async def go(self):
         cfg = self.cfg
@@ -130,18 +129,22 @@ class GmailAPI(object):
         self.session = aiohttp.ClientSession(connector=connector,
                                              raise_for_status=False)
 
+        scopes = [
+            "https://www.googleapis.com/auth/gmail.modify",
+        ]
+        if self.oauth_smtp:
+            scopes.append("https://mail.google.com/")
+
         self.redirect_url = cfg.web_app.url + "oauth2/gmail"
         self.api_token = cfg.msgdb.get_authenticator(self.domain_id)
+        if  not oauth.check_scopes(self.api_token, scopes):
+            self.api_token = None
         self.oauth = requests_oauthlib.OAuth2Session(
             client_id=self.client_id,
             client=NativePublicApplicationClient(self.client_id),
             redirect_uri=self.redirect_url,
             token=self.api_token,
-            scope=[
-                "https://www.googleapis.com/auth/gmail.modify",
-                # This one is needed for SMTP ?
-                #"https://mail.google.com/",
-            ])
+            scope=scopes)
 
         if self.api_token:
             self._set_token()
@@ -295,6 +298,19 @@ class GmailAPI(object):
 
     async def close(self):
         await self.session.close()
+
+    async def get_xoauth2_bytes(self, proto: str) -> bytes:
+        """Return the xoauth2 byte string for the given protocol to login to
+        this account."""
+        while self.api_token is None:
+            await self.authenticate()
+
+        if proto == "SMTP":
+            res = 'user=%s\1auth=%s %s\1\1' % (self.user,
+                                               self.api_token["token_type"],
+                                               self.api_token["access_token"])
+            return res.encode()
+        return None
 
 
 class GMailMessage(messages.Message):

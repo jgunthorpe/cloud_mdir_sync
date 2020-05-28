@@ -1,9 +1,34 @@
 # SPDX-License-Identifier: GPL-2.0+
 import asyncio
 import os
+from abc import abstractmethod
+from typing import TYPE_CHECKING, List
 
 import aiohttp
 import aiohttp.web
+
+if TYPE_CHECKING:
+    from . import config
+
+
+def check_scopes(token, required_scopes: List[str]) -> bool:
+    if token is None:
+        return False
+    tscopes = set(token.get("scope", []))
+    return set(required_scopes).issubset(tscopes)
+
+
+class Account(object):
+    """An OAUTH2 account"""
+    oauth_smtp = False
+
+    def __init__(self, cfg: "config.Config", user: str):
+        self.cfg = cfg
+        self.user = user
+
+    @abstractmethod
+    async def get_xoauth2_bytes(self, proto: str) -> bytes:
+        pass
 
 
 class WebServer(object):

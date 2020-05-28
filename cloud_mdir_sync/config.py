@@ -116,5 +116,10 @@ class Config(object):
         self.local_mboxes.append(MailDirMailbox(self, directory))
         return self.local_mboxes[-1]
 
+    def CredentialServer(self, path: str, accounts: List, umask=0o600):
+        from .credsrv import CredentialServer
+        self.async_tasks.append(CredentialServer(self, path, accounts, umask))
+        return self.async_tasks[-1]
+
     def _direct_message(self, msg):
         return self.local_mboxes[0]

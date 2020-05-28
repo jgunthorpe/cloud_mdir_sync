@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional, Union
 import aiohttp
 import requests
 
-from . import config, mailbox, messages, util
+from . import config, mailbox, messages, oauth, util
 from .util import asyncio_complete
 
 
@@ -67,21 +67,20 @@ def _retry_protect(func):
     return async_wrapper
 
 
-class GraphAPI(object):
+class GraphAPI(oauth.Account):
     """An OAUTH2 authenticated session to the Microsoft Graph API"""
     graph_scopes = [
         "https://graph.microsoft.com/User.Read",
         "https://graph.microsoft.com/Mail.ReadWrite"
     ]
-    graph_token = None
+    graph_token: Optional[Dict[str,str]] = None
     owa_scopes = ["https://outlook.office.com/mail.read"]
     owa_token = None
     authenticator = None
 
     def __init__(self, cfg: config.Config, user: str, tenant: str):
+        super().__init__(cfg, user)
         self.domain_id = f"o365-{user}-{tenant}"
-        self.cfg = cfg
-        self.user = user
         self.tenant = tenant
 
         if self.user is not None:
@@ -93,7 +92,7 @@ class GraphAPI(object):
         # with our caching scheme. See
         # https://docs.microsoft.com/en-us/graph/outlook-immutable-id
         self.headers= {"Prefer": 'IdType="ImmutableId"'}
-        self.owa_headers = {}
+        self.owa_headers: Dict[str, str] = {}
 
     async def go(self):
         import msal
@@ -110,6 +109,11 @@ class GraphAPI(object):
             client_id="122f4826-adf9-465d-8e84-e9d00bc9f234",
             authority=f"https://login.microsoftonline.com/{self.tenant}",
             token_cache=self.msl_cache)
+
+        if self.oauth_smtp:
+            self.owa_scopes = self.owa_scopes + [
+                "https://outlook.office.com/SMTP.Send"
+            ]
 
     def _cached_authenticate(self):
         accounts = self.msal.get_accounts(self.user)
@@ -351,6 +355,19 @@ class GraphAPI(object):
 
     async def close(self):
         await self.session.close()
+
+    async def get_xoauth2_bytes(self, proto: str) -> bytes:
+        """Return the xoauth2 byte string for the given protocol to login to
+        this account."""
+        while self.owa_token is None:
+            await self.authenticate()
+
+        if proto == "SMTP":
+            res = 'user=%s\1auth=%s %s\1\1' % (self.user,
+                                               self.owa_token["token_type"],
+                                               self.owa_token["access_token"])
+            return res.encode()
+        return None
 
 
 class O365Mailbox(mailbox.Mailbox):

@@ -255,6 +255,12 @@ For mutt use the following configuration:
 set maildir_trash = yes
 ```
 
+# Mail Delivery Agent Configuration
+
+CMS includes a OAUTH broker than can export a SMTP access token to local SMTP
+delivery agents. The [Outbound mail through SMTP](doc/smtp.md) page describes
+this configuration.
+
 # Future Work/TODO
 - Use delta queries on mailboxes with MS Graph. Delta queries allow
   downloading only changed message meta-data and will accelerate polling of
