@@ -24,6 +24,21 @@ CredentialServer("/var/run/user/XXX/cms.sock",
 Upon restart CMS will acquire and maintain a OAUTH token with the SMTP scope
 for the specified accounts, and serve token requests on the specified path.
 
+## Configuration Test
+
+CMS provides the *cms-auth* tool to get tokens out of the daemon. It has a
+test mode which should be used to verify that the SMTP server is working correctly:
+
+```sh
+$ cms-oauth --user=user@domain.com --cms_sock=/var/run/user/XXX/cms.sock --test-smtp=smtp.office365.com
+```
+
+On success the last log line will report something like:
+
+```
+reply: retcode (235); Msg: b'2.7.0 Authentication successful'
+```
+
 # exim 4
 
 Exim is a long standing UNIX mail system that is fully featured. exim's flexible
@@ -64,3 +79,28 @@ making the adjustments noted. In this mode /usr/bin/sendmail will be fully
 functional for outbound mail and if multiple accounts are required, it will
 automatically choose the account to send mail through based on the Envelope
 From header.
+
+# msmtp
+
+msmtp is a small program that pretends to be sendmail and immeditately sends
+the message to the configured server.  Newer versions have the ability to call
+out to an external program to get an OAUTH token. An [example
+configuration](example-msmtp.conf) is provided showing how to connect it to
+CMS.
+
+Support for gmail requires msmtp 1.8.4, and support for O365 requires a
+[patch](msmtp-xoauth2.patch).
+
+# git send-email
+
+There is currently no native support for XOAUTH2. When one of the above two
+methods is used to setup a local sendmail, then use this .git_config:
+
+```
+[sendemail]
+        smtpserver = /usr/bin/msmtp
+        from = User Name <user@domain.com>
+        envelopeSender = User Name <user@domain.com>
+        assume8bitEncoding = UTF-8
+        transferEncoding = auto
+```

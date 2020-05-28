@@ -1,0 +1,299 @@
+From 6f35191d6676f4c55cecde561d55afd11182f7f4 Mon Sep 17 00:00:00 2001
+From: Jason Gunthorpe <jgg@mellanox.com>
+Date: Thu, 28 May 2020 15:51:07 -0300
+Subject: [PATCH] Support XOAUTH2 authentication
+
+XOAUTH2 is very similar to OAUTHBEARER, but some providers only implement
+the XOAUTH2 varient.
+
+This is based on the prior commit ebcbdb9b251f ("Add XOAUTH2 support.")
+and keeps the same password format of the fully formed AUTH value.
+
+As this is intended to be used with Office 365 the size of the password is
+increased. Current O365 AUTH values are over 2500 bytes, doubling should
+give room to grow.
+
+Tested against GMail and Office 365 accounts.
+---
+ doc/msmtp.1           |  6 ++--
+ doc/msmtp.texi        |  7 +++--
+ scripts/vim/msmtp.vim |  2 +-
+ src/conf.c            |  3 +-
+ src/msmtp.c           | 10 ++++++-
+ src/smtp.c            | 66 +++++++++++++++++++++++++++++++++++++++----
+ src/smtp.h            |  5 ++--
+ 7 files changed, 84 insertions(+), 15 deletions(-)
+
+diff --git a/doc/msmtp.1 b/doc/msmtp.1
+index 41cd75b6aa0d5d..534b005e258a9c 100644
+--- a/doc/msmtp.1
++++ b/doc/msmtp.1
+@@ -10,7 +10,7 @@
+ .\" under the terms of the GNU Free Documentation License, Version 1.2 or
+ .\" any later version published by the Free Software Foundation; with no
+ .\" Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+-.TH MSMTP 1 2020-04
++.TH MSMTP 1 2020-06
+ .SH NAME
+ msmtp \- An SMTP client
+ .SH SYNOPSIS
+@@ -363,8 +363,8 @@ considered broken; it sometimes requires a special domain parameter passed via
+ \fBntlmdomain\fP).
+ .br
+ There are currently three authentication methods that are not based on user /
+-password information and have to be chosen manually: \fIoauthbearer\fP (an OAuth2
+-token from the mail provider is used as the password.
++password information and have to be chosen manually: \fIoauthbearer\fP and
++\fIxoauth2\fP (an OAuth2 token from the mail provider is used as the password.
+ See the documentation of your mail provider for details on how to get this
+ token. The \fBpasswordeval\fP command can be used to pass the regularly changing
+ tokens into msmtp from a script or an environment variable),
+diff --git a/doc/msmtp.texi b/doc/msmtp.texi
+index ef782bab2f93f1..6793255c202cb2 100644
+--- a/doc/msmtp.texi
++++ b/doc/msmtp.texi
+@@ -226,7 +226,7 @@ are the domain part of your mail address (@code{provider.example} for
+ @cmindex auth
+ Enable or disable authentication and optionally choose a method to use. The
+ argument @samp{on} chooses a method automatically.
+-Accepted methods are @samp{plain}, @samp{scram-sha-1}, @samp{oauthbearer}, @samp{cram-md5},
++Accepted methods are @samp{plain}, @samp{scram-sha-1}, @samp{oauthbearer}, @samp{xoauth2}, @samp{cram-md5},
+ @samp{gssapi}, @samp{external}, @samp{digest-md5}, @samp{login}, and
+ @samp{ntlm}.
+ @xref{Authentication}.@*
+@@ -962,8 +962,11 @@ password information and have to be chosen manually:
+ @item @samp{OAUTHBEARER}@*
+ An OAuth2 token from the mail provider is used as the password.
+ See the documentation of your mail provider for details on how to get this
+-token. The @samp{passwordeval} command can be used to pass the regularly changing
++token. The password is the raw OAUTH2 access_token. The @samp{passwordeval} command can be used to pass the regularly changing
+ tokens into msmtp from a script or an environment variable.
++@item @samp{XOAUTH2}@*
++Similar to OAUTHBEARER, but uses the older XOAUTH2 protocol. The password is the
++base64 value to send in the AUTH header.
+ @item @samp{EXTERNAL}@*
+ The authentication happens outside of the protocol, typically by sending a TLS
+ client certificate (see @ref{Client Certificates}).@*
+diff --git a/scripts/vim/msmtp.vim b/scripts/vim/msmtp.vim
+index 05fd20148141ca..f6020400405087 100644
+--- a/scripts/vim/msmtp.vim
++++ b/scripts/vim/msmtp.vim
+@@ -35,7 +35,7 @@ syn match msmtpWrongOption /\<timeout \(off$\|\d\+$\)\@!.*$/
+ " Option protocol accepts smtp and lmtp.
+ syn match msmtpWrongOption /\<protocol \(smtp$\|lmtp$\)\@!.*$/
+ " Option auth accepts on, off and the method.
+-syn match msmtpWrongOption /\<auth \(on$\|off$\|plain$\|cram-md5$\|digest-md5$\|scram-sha-1$\|gssapi$\|external$\|login$\|ntlm$\|oauthbearer\)\@!.*$/
++syn match msmtpWrongOption /\<auth \(on$\|off$\|plain$\|cram-md5$\|digest-md5$\|scram-sha-1$\|gssapi$\|external$\|login$\|ntlm$\|xoauth2\|oauthbearer\)\@!.*$/
+ " Option syslog accepts on, off and the facility.
+ syn match msmtpWrongOption /\<syslog \(on$\|off$\|LOG_USER$\|LOG_MAIL$\|LOG_LOCAL\d$\)\@!.*$/
+ 
+diff --git a/src/conf.c b/src/conf.c
+index a0e3eb3f4dbc29..6839359a7efa14 100644
+--- a/src/conf.c
++++ b/src/conf.c
+@@ -50,7 +50,7 @@
+ #include "conf.h"
+ 
+ /* buffer size for configuration file lines */
+-#define LINEBUFSIZE 501
++#define LINEBUFSIZE 5001
+ 
+ 
+ /*
+@@ -415,6 +415,7 @@ int check_auth_arg(char *arg)
+             || strcmp(arg, "external") == 0
+             || strcmp(arg, "login") == 0
+             || strcmp(arg, "ntlm") == 0
++            || strcmp(arg, "xoauth2") == 0
+             || strcmp(arg, "oauthbearer") == 0)
+     {
+         l = strlen(arg);
+diff --git a/src/msmtp.c b/src/msmtp.c
+index be96be8cfde53e..cf192b5aafe6a7 100644
+--- a/src/msmtp.c
++++ b/src/msmtp.c
+@@ -570,6 +570,10 @@ int msmtp_serverinfo(account_t *acc, int debug, list_t **msg, char **errstr)
+             {
+                 printf("OAUTHBEARER ");
+             }
++            if (srv.cap.flags & SMTP_CAP_AUTH_XOAUTH2)
++            {
++                printf("XOAUTH2 ");
++            }
+             printf("\n");
+         }
+ #ifdef HAVE_TLS
+@@ -2064,7 +2068,7 @@ void msmtp_print_version(void)
+     printf(_("Authentication library: %s\n"
+                 "Supported authentication methods:\n"),
+ #ifdef HAVE_LIBGSASL
+-            _("GNU SASL; oauthbearer: built-in")
++            _("GNU SASL; oauthbearer/xoauth2: built-in")
+ #else
+             _("built-in")
+ #endif /* HAVE_LIBGSASL */
+@@ -2101,6 +2105,10 @@ void msmtp_print_version(void)
+     {
+         printf("ntlm ");
+     }
++    if (smtp_client_supports_authmech("XOAUTH2"))
++    {
++        printf("xoauth2 ");
++    }
+     if (smtp_client_supports_authmech("OAUTHBEARER"))
+     {
+         printf("oauthbearer ");
+diff --git a/src/smtp.c b/src/smtp.c
+index 2f2b4f9b44641c..fe6c356fd419d0 100644
+--- a/src/smtp.c
++++ b/src/smtp.c
+@@ -521,6 +521,10 @@ int smtp_init(smtp_server_t *srv, const char *ehlo_domain, list_t **errmsg,
+             {
+                 srv->cap.flags |= SMTP_CAP_AUTH_NTLM;
+             }
++            if (strstr(s + 9, "XOAUTH2"))
++            {
++                srv->cap.flags |= SMTP_CAP_AUTH_XOAUTH2;
++            }
+             if (strstr(s + 9, "OAUTHBEARER"))
+             {
+                 srv->cap.flags |= SMTP_CAP_AUTH_OAUTHBEARER;
+@@ -926,6 +930,44 @@ int smtp_auth_external(smtp_server_t *srv, const char *user,
+ #endif /* !HAVE_LIBGSASL */
+ 
+ 
++/*
++ * smtp_auth_xoauth2()
++ *
++ * Do SMTP authentication via AUTH XOAUTH2.
++ * The SMTP server must support SMTP_CAP_AUTH_XOAUTH2
++ * Used error codes: SMTP_EIO, SMTP_EAUTHFAIL, SMTP_EINVAL
++ */
++
++int smtp_auth_xoauth2(smtp_server_t *srv, const char *password,
++        list_t **error_msg, char **errstr)
++{
++    list_t *msg;
++    int e;
++    int status;
++
++    *error_msg = NULL;
++
++    if ((e = smtp_send_cmd(srv, errstr, "AUTH XOAUTH2 %s", password)) != SMTP_EOK)
++    {
++        return e;
++    }
++    if ((e = smtp_get_msg(srv, &msg, errstr)) != SMTP_EOK)
++    {
++        return e;
++    }
++    if ((status = smtp_msg_status(msg)) != 235)
++    {
++        *error_msg = msg;
++        *errstr = xasprintf(_("authentication failed (method %s)"), "XOAUTH2");
++        return SMTP_EAUTHFAIL;
++    }
++    list_xfree(msg, free);
++
++    return SMTP_EOK;
++}
++
++
++
+ /*
+  * smtp_auth_oauthbearer()
+  *
+@@ -1023,6 +1065,8 @@ int smtp_server_supports_authmech(smtp_server_t *srv, const char *mech)
+                 && strcmp(mech, "LOGIN") == 0)
+             || ((srv->cap.flags & SMTP_CAP_AUTH_NTLM)
+                 && strcmp(mech, "NTLM") == 0)
++            || ((srv->cap.flags & SMTP_CAP_AUTH_XOAUTH2)
++                && strcmp(mech, "XOAUTH2") == 0)
+             || ((srv->cap.flags & SMTP_CAP_AUTH_OAUTHBEARER)
+                 && strcmp(mech, "OAUTHBEARER") == 0));
+ }
+@@ -1041,7 +1085,7 @@ int smtp_client_supports_authmech(const char *mech)
+     int supported = 0;
+     Gsasl *ctx;
+ 
+-    if (strcmp(mech, "OAUTHBEARER") == 0)
++    if (strcmp(mech, "XOAUTH2") == 0 || strcmp(mech, "OAUTHBEARER") == 0)
+     {
+         supported = 1;
+     }
+@@ -1062,6 +1106,7 @@ int smtp_client_supports_authmech(const char *mech)
+             || strcmp(mech, "PLAIN") == 0
+             || strcmp(mech, "EXTERNAL") == 0
+             || strcmp(mech, "LOGIN") == 0
++            || strcmp(mech, "XOAUTH2") == 0
+             || strcmp(mech, "OAUTHBEARER") == 0);
+ 
+ #endif /* not HAVE_LIBGSASL */
+@@ -1190,8 +1235,8 @@ int smtp_auth(smtp_server_t *srv,
+     /* Check availability of required authentication data */
+     if (strcmp(auth_mech, "EXTERNAL") != 0)
+     {
+-        /* All authentication schemes need a user name */
+-        if (!user)
++        /* All authentication schemes except XOAUTH2 need a user name */
++	if (strcmp(auth_mech, "XOAUTH2") != 0 && !user)
+         {
+             gsasl_done(ctx);
+             *errstr = xasprintf(_("authentication method %s needs a user name"),
+@@ -1224,6 +1269,13 @@ int smtp_auth(smtp_server_t *srv,
+         free(callback_password);
+         return e;
+     }
++    else if (strcmp(auth_mech, "XOAUTH2") == 0)
++    {
++        gsasl_done(ctx);
++        e = smtp_auth_xoauth2(srv, password, error_msg, errstr);
++        free(callback_password);
++        return e;
++    }
+     else if ((error_code = gsasl_client_start(ctx, auth_mech, &sctx)) != GSASL_OK)
+     {
+         gsasl_done(ctx);
+@@ -1462,8 +1514,8 @@ int smtp_auth(smtp_server_t *srv,
+     if (strcmp(auth_mech, "EXTERNAL") != 0)
+     {
+         /* CRAMD-MD5, PLAIN, LOGIN, OAUTHBEARER all need a user name and a
+-         * password */
+-        if (!user)
++         * password; XOAUTH2 just needs the password */
++	if (strcmp(auth_mech, "XOAUTH2") != 0 && !user)
+         {
+             *errstr = xasprintf(_("authentication method %s needs a user name"),
+                     auth_mech);
+@@ -1499,6 +1551,10 @@ int smtp_auth(smtp_server_t *srv,
+     {
+         e = smtp_auth_login(srv, user, password, error_msg, errstr);
+     }
++    else if (strcmp(auth_mech, "XOAUTH2") == 0)
++    {
++        e = smtp_auth_xoauth2(srv, password, error_msg, errstr);
++    }
+     else if (strcmp(auth_mech, "OAUTHBEARER") == 0)
+     {
+         e = smtp_auth_oauthbearer(srv, hostname, port, user, password,
+diff --git a/src/smtp.h b/src/smtp.h
+index 6bb0273046bba8..9e417d947855aa 100644
+--- a/src/smtp.h
++++ b/src/smtp.h
+@@ -72,8 +72,9 @@
+ #define SMTP_CAP_AUTH_GSSAPI            (1 << 10)
+ #define SMTP_CAP_AUTH_EXTERNAL          (1 << 11)
+ #define SMTP_CAP_AUTH_NTLM              (1 << 12)
+-#define SMTP_CAP_AUTH_OAUTHBEARER       (1 << 13)
+-#define SMTP_CAP_ETRN                   (1 << 14)
++#define SMTP_CAP_AUTH_XOAUTH2           (1 << 13)
++#define SMTP_CAP_AUTH_OAUTHBEARER       (1 << 14)
++#define SMTP_CAP_ETRN                   (1 << 15)
+ 
+ 
+ /*
+
+base-commit: 4fc9ee7770d7f81e4f58f776b5da015eadf14aa2
+-- 
+2.26.2
+

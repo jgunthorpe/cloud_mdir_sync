@@ -25,7 +25,10 @@ setup(
     license='GPL',
     packages=['cloud_mdir_sync'],
     entry_points={
-        'console_scripts': ['cloud-mdir-sync=cloud_mdir_sync.main:main'],
+        'console_scripts': [
+            'cloud-mdir-sync=cloud_mdir_sync.main:main',
+            'cms-oauth=cloud_mdir_sync.cms_oauth_main:main'
+        ],
     },
     python_requires=">=3.6",
     install_requires=[
