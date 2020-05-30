@@ -149,6 +149,7 @@ class MailDirMailbox(mailbox.Mailbox):
         # delivered it.
         if cloudmsg.received_time is not None:
             os.utime(fn, (time.time(), cloudmsg.received_time.timestamp()))
+        self.msgdb.update_inode_cache(msg)
         self.messages[msg.content_hash] = msg
 
     def _set_flags(self, mymsg: messages.Message, cloudmsg: messages.Message):

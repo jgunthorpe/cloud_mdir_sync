@@ -281,6 +281,13 @@ class MessageDB(object):
         self.alt_file_hashes[msg.content_hash].add(fn)
         msg.fill_email_id()
 
+    def update_inode_cache(self, msg):
+        """After the message has been hardlinked or the times adjusted,
+        the inode cache needs to be updated with the new times"""
+        st = os.stat(msg.fn)
+        inode = (st.st_ino, st.st_size, st.st_mtime, st.st_ctime)
+        self.inode_hashes[inode] = msg.content_hash
+
     def write_content(self, content_hash, dest_fn):
         """Make the filename dest_fn contain content_hash's content"""
         assert content_hash in self.file_hashes
