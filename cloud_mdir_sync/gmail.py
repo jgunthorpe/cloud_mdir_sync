@@ -374,6 +374,7 @@ class GMailMailbox(mailbox.Mailbox):
         self.label_name = label
         self.gmail = gmail
         self.gmail_messages = {}
+        self.max_fetches = asyncio.Semaphore(10)
 
     async def setup_mbox(self):
         """Setup access to the authenticated API domain for this endpoint"""
@@ -400,22 +401,23 @@ class GMailMailbox(mailbox.Mailbox):
     async def _fetch_message(self, msg: GMailMessage):
         msgdb = self.msgdb
         msg.size = 0
-        with util.log_progress_ctx(logging.DEBUG,
-                                   f"Downloading {msg.storage_id}",
-                                   lambda msg: f" {util.sizeof_fmt(msg.size)}",
-                                   msg), msgdb.get_temp() as F:
-            jmsg = await self.gmail.get_json(
-                "v1",
-                f"/users/me/messages/{msg.storage_id}",
-                params={
-                    "format": "raw",
-                })
-            data = base64.urlsafe_b64decode(jmsg["raw"])
-            data = data.replace(b"\r\n", b"\n")
-            F.write(data)
-            msg.size = F.tell()
-            msg.update_from_json(jmsg)
-            msg.content_hash = msgdb.store_hashed_msg(msg, F)
+        async with self.max_fetches:
+            with util.log_progress_ctx(
+                    logging.DEBUG, f"Downloading {msg.storage_id}",
+                    lambda msg: f" {util.sizeof_fmt(msg.size)}",
+                    msg), msgdb.get_temp() as F:
+                jmsg = await self.gmail.get_json(
+                    "v1",
+                    f"/users/me/messages/{msg.storage_id}",
+                    params={
+                        "format": "raw",
+                    })
+                data = base64.urlsafe_b64decode(jmsg["raw"])
+                data = data.replace(b"\r\n", b"\n")
+                F.write(data)
+                msg.size = F.tell()
+                msg.update_from_json(jmsg)
+                msg.content_hash = msgdb.store_hashed_msg(msg, F)
         return jmsg["historyId"]
 
     async def _fetch_all_messages(self):

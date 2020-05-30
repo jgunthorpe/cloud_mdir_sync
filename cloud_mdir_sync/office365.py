@@ -390,6 +390,7 @@ class O365Mailbox(mailbox.Mailbox):
         super().__init__(cfg)
         self.mailbox = mailbox
         self.graph = graph
+        self.max_fetches = asyncio.Semaphore(10)
 
     async def setup_mbox(self):
         """Setup access to the authenticated API domain for this endpoint"""
@@ -413,19 +414,20 @@ class O365Mailbox(mailbox.Mailbox):
     async def _fetch_message(self, msg: messages.Message):
         msgdb = self.msgdb
         msg.size = 0
-        with util.log_progress_ctx(logging.DEBUG,
-                                   f"Downloading {msg.email_id}",
-                                   lambda msg: f" {util.sizeof_fmt(msg.size)}",
-                                   msg), msgdb.get_temp() as F:
-            # For some reason this returns a message with dos line
-            # endings. Really weird.
-            await self.graph.get_to_file(
-                F,
-                "v1.0",
-                f"/me/messages/{msg.storage_id}/$value",
-                dos2unix=True)
-            msg.size = F.tell()
-            msg.content_hash = msgdb.store_hashed_msg(msg, F)
+        async with self.max_fetches:
+            with util.log_progress_ctx(
+                    logging.DEBUG, f"Downloading {msg.email_id}",
+                    lambda msg: f" {util.sizeof_fmt(msg.size)}",
+                    msg), msgdb.get_temp() as F:
+                # For some reason this returns a message with dos line
+                # endings. Really weird.
+                await self.graph.get_to_file(
+                    F,
+                    "v1.0",
+                    f"/me/messages/{msg.storage_id}/$value",
+                    dos2unix=True)
+                msg.size = F.tell()
+                msg.content_hash = msgdb.store_hashed_msg(msg, F)
 
     def _json_to_flags(self, jmsg):
         """This is was remarkably difficult to find out, and seems completely
