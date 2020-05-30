@@ -487,6 +487,7 @@ class O365Mailbox(mailbox.Mailbox):
                 "$expand":
                 "SingleValueExtendedProperties($filter=(id eq 'Integer 0xe17') or"
                 " (id eq 'Integer 0x1080'))",
+                "$top": 500,
             }):
             msg = messages.Message(mailbox=self,
                                    storage_id=jmsg["id"],
