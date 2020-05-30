@@ -224,20 +224,27 @@ class MessageDB(object):
         stuff we have already downloaded and is crash safe as we rehash every
         file. Accidental duplicates are pruned along the way."""
         hashes = set()
-        for fn in os.listdir(hashes_dir):
-            if fn.startswith("."):
-                continue
+        # Since we don't use sync the files can be corrupted, check them.
+        dirl = [fn for fn in os.listdir(hashes_dir) if not fn.startswith(".")]
+        while dirl:
+            chunk = dirl[:500]
+            del dirl[:500]
+            sha1 = subprocess.check_output(["sha1sum"] + chunk,
+                                           cwd=hashes_dir).decode()
+            lines = sha1.splitlines()
+            assert(len(chunk) == len(lines))
+            for fn,ln in zip(chunk,lines):
+                ch, _, check_fn = ln.partition('  ')
+                assert(check_fn == fn)
 
-            # Since we don't use sync the files can be corrupted, check them.
-            ffn = os.path.join(hashes_dir, fn)
-            ch = self._sha1_fn(ffn)
-            if fn == ch:
-                hashes.add(ch)
-                st = os.stat(ffn)
-                inode = (st.st_ino, st.st_size, st.st_mtime, st.st_ctime)
-                self.inode_hashes[inode] = ch
-            else:
-                os.unlink(ffn)
+                ffn = os.path.join(hashes_dir, fn)
+                if fn == ch:
+                    hashes.add(ch)
+                    st = os.stat(ffn)
+                    inode = (st.st_ino, st.st_size, st.st_mtime, st.st_ctime)
+                    self.inode_hashes[inode] = ch
+                else:
+                    os.unlink(ffn)
         self.file_hashes.update(hashes)
 
     def have_content(self, msg: Message):
