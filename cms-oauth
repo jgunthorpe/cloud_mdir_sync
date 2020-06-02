@@ -1,0 +1,9 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-2.0+
+# This script will setup a local virtual environment with all the required
+# python packages and then invoke the current source code within it. It is
+# useful for development and 'run from source' approaches
+set -e
+VENV=$(dirname "$BASH_SOURCE")/.venv
+source "$VENV/bin/activate"
+exec "$VENV/bin/cms-oauth" "$@"
