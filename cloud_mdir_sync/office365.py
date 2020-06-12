@@ -37,9 +37,15 @@ def _retry_protect(func):
                     self.owa_token = None
                     await self.authenticate()
                     continue
+                if e.code == 429: # Too Many Requests
+                    delay = int(e.headers.get("Retry-After", 10))
+                    self.cfg.logger.error(
+                        f"Graph returns {e} Too Many Requests, {e.headers.get('Rate-Limit-Reason')}, delaying {delay}"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
                 if (e.code == 503 or  # Service Unavilable
                         e.code == 509 or  # Bandwidth Limit Exceeded
-                        e.code == 429 or  # Too Many Requests
                         e.code == 504 or  # Gateway Timeout
                         e.code == 200):  # Success, but error JSON
                     self.cfg.logger.error(f"Graph returns {e}, delaying")
