@@ -39,7 +39,6 @@ setup(
         'oauthlib>=3.1',
         'pyinotify>=0.9.6',
         'requests>=2.18',
-        'requests_oauthlib>=1.3',
     ],
     include_package_data=True,
     zip_safe=False)

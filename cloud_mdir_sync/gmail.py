@@ -4,7 +4,6 @@ import base64
 import collections
 import datetime
 import functools
-import hashlib
 import logging
 import secrets
 import webbrowser
@@ -12,51 +11,9 @@ from typing import Dict, List, Optional, Set
 
 import aiohttp
 import oauthlib
-import requests_oauthlib
 
 from . import config, mailbox, messages, oauth, util
 from .util import asyncio_complete
-
-
-class NativePublicApplicationClient(oauthlib.oauth2.WebApplicationClient):
-    """Amazingly oauthlib doesn't include client size PCKE support
-    Hack it into the WebApplicationClient"""
-    def __init__(self, client_id):
-        super().__init__(client_id)
-
-    def _code_challenge_method_s256(self, verifier):
-        return base64.urlsafe_b64encode(
-            hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
-
-    def prepare_request_uri(self,
-                            authority_uri,
-                            redirect_uri,
-                            scope=None,
-                            state=None,
-                            **kwargs):
-        self.verifier = secrets.token_urlsafe(96)
-        return super().prepare_request_uri(
-            authority_uri,
-            redirect_uri=redirect_uri,
-            scope=scope,
-            state=state,
-            code_challenge=self._code_challenge_method_s256(self.verifier),
-            code_challenge_method="S256",
-            **kwargs)
-
-    def prepare_request_body(self,
-                             code=None,
-                             redirect_uri=None,
-                             body='',
-                             include_client_id=True,
-                             **kwargs):
-        return super().prepare_request_body(
-            code=code,
-            redirect_uri=redirect_uri,
-            body=body,
-            include_client_id=include_client_id,
-            code_verifier=self.verifier,
-            **kwargs)
 
 
 def _retry_protect(func):
@@ -74,7 +31,6 @@ def _retry_protect(func):
                 )
                 if (e.code == 401 or  # Unauthorized
                         e.code == 403):  # Forbidden
-                    self.headers = None
                     await self.authenticate()
                     continue
                 if (e.code == 503 or  # Service Unavilable
@@ -129,71 +85,66 @@ class GmailAPI(oauth.Account):
         self.session = aiohttp.ClientSession(connector=connector,
                                              raise_for_status=False)
 
-        scopes = [
+        self.scopes = [
             "https://www.googleapis.com/auth/gmail.modify",
         ]
         if self.oauth_smtp:
-            scopes.append("https://mail.google.com/")
+            self.scopes.append("https://mail.google.com/")
 
         self.redirect_url = cfg.web_app.url + "oauth2/gmail"
         self.api_token = cfg.msgdb.get_authenticator(self.domain_id)
-        if  not oauth.check_scopes(self.api_token, scopes):
-            self.api_token = None
-        self.oauth = requests_oauthlib.OAuth2Session(
+        self.oauth = oauth.OAuth2Session(
             client_id=self.client_id,
-            client=NativePublicApplicationClient(self.client_id),
+            client=oauth.NativePublicApplicationClient(self.client_id),
             redirect_uri=self.redirect_url,
-            token=self.api_token,
-            scope=scopes)
+            token=self.api_token)
 
-        if self.api_token:
-            self._set_token()
+        await self._do_authenticate()
 
-    def _set_token(self):
-        self.cfg.msgdb.set_authenticator(self.domain_id, self.api_token)
+    def _set_token(self, api_token):
+        # Only store the refresh token, access tokens are more dangerous to
+        # keep as they are valid across a password change for their lifetime
+        self.cfg.msgdb.set_authenticator(
+            self.domain_id,
+            {"refresh_token": api_token["refresh_token"]})
         # We expect to only use a Authorization header
-        self.headers = {}
-        try:
-            _, headers, _ = self.oauth._client.add_token(
-                uri="https://foo/",
-                http_method="GET",
-                headers={},
-                token_placement=oauthlib.oauth2.rfc6749.clients.AUTH_HEADER)
-            assert headers
-        except oauthlib.oauth2.TokenExpiredError:
-            return
-        except oauthlib.oauth2.OAuth2Error:
-            self.api_token = None
-        self.headers = headers
+        self.headers = {
+            "Authorization":
+            api_token["token_type"] + " " + api_token["access_token"]
+        }
+        self.api_token = api_token
+        return True
 
-    def _refresh_authenticate(self):
-        if not self.api_token:
+    async def _refresh_authenticate(self):
+        if self.api_token is None:
             return False
 
         try:
-            self.api_token = self.oauth.refresh_token(
+            api_token = await self.oauth.refresh_token(
+                self.session,
                 token_url='https://oauth2.googleapis.com/token',
-                client_id=self.oauth.client_id,
+                client_id=self.client_id,
                 client_secret=self.client_secret,
+                scopes=self.scopes,
                 refresh_token=self.api_token["refresh_token"])
         except oauthlib.oauth2.OAuth2Error:
             self.api_token = None
             return False
-        self._set_token()
-        return bool(self.headers)
+        return self._set_token(api_token)
 
     @util.log_progress(lambda self: f"Google Authentication for {self.user}")
     async def _do_authenticate(self):
-        while not self._refresh_authenticate():
+        while not await self._refresh_authenticate():
             self.api_token = None
 
             # This flow follows the directions of
             # https://developers.google.com/identity/protocols/OAuth2InstalledApp
             state = hex(id(self)) + secrets.token_urlsafe(8)
-            url, state = self.oauth.authorization_url(
+            url = self.oauth.authorization_url(
                 'https://accounts.google.com/o/oauth2/v2/auth',
                 state=state,
                 access_type="offline",
+                scopes=self.scopes,
                 login_hint=self.user)
 
             print(
@@ -203,12 +154,15 @@ class GmailAPI(oauth.Account):
             q = await self.cfg.web_app.auth_redir(url, state,
                                                   self.redirect_url)
 
-            self.api_token = self.oauth.fetch_token(
+            api_token = await self.oauth.fetch_token(
+                self.session,
                 'https://oauth2.googleapis.com/token',
                 include_client_id=True,
                 client_secret=self.client_secret,
+                scopes=self.scopes,
                 code=q["code"])
-            self._set_token()
+            if self._set_token(api_token):
+                return
 
     async def authenticate(self):
         """Obtain OAUTH bearer tokens for MS services. For users this has to be done
@@ -217,6 +171,7 @@ class GmailAPI(oauth.Account):
         tokens within some limited time period."""
         # Ensure we only ever have one authentication open at once. Other
         # threads will all block here on the single authenticator.
+        self.headers = None
         if self.authenticator is None:
             self.authenticator = asyncio.create_task(self._do_authenticate())
         auth = self.authenticator
