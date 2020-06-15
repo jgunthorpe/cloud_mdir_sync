@@ -2,6 +2,7 @@
 import asyncio
 import datetime
 import functools
+import json
 import logging
 import os
 import pickle
@@ -10,7 +11,7 @@ import webbrowser
 from typing import Any, Dict, Optional, Union
 
 import aiohttp
-import requests
+import oauthlib
 
 from . import config, mailbox, messages, oauth, util
 from .util import asyncio_complete
@@ -27,7 +28,8 @@ def _retry_protect(func):
     @functools.wraps(func)
     async def async_wrapper(self, *args, **kwargs):
         while True:
-            while (self.graph_token is None or self.owa_token is None):
+            while ("Authorization" not in self.headers
+                   or "Authorization" not in self.owa_headers):
                 await self.authenticate()
 
             try:
@@ -38,8 +40,6 @@ def _retry_protect(func):
                 )
                 if (e.code == 401 or  # Unauthorized
                         e.code == 403):  # Forbidden
-                    self.graph_token = None
-                    self.owa_token = None
                     await self.authenticate()
                     continue
                 if e.code == 429: # Too Many Requests
@@ -80,9 +80,11 @@ def _retry_protect(func):
 
 class GraphAPI(oauth.Account):
     """An OAUTH2 authenticated session to the Microsoft Graph API"""
+    client_id = "122f4826-adf9-465d-8e84-e9d00bc9f234"
     graph_scopes = [
         "https://graph.microsoft.com/User.Read",
-        "https://graph.microsoft.com/Mail.ReadWrite"
+        "https://graph.microsoft.com/Mail.ReadWrite",
+        "offline_access",
     ]
     graph_token: Optional[Dict[str,str]] = None
     owa_scopes = ["https://outlook.office.com/mail.read"]
@@ -106,11 +108,12 @@ class GraphAPI(oauth.Account):
         self.owa_headers: Dict[str, str] = {}
 
     async def go(self):
-        import msal
-        self.msl_cache = msal.SerializableTokenCache()
         auth = self.cfg.msgdb.get_authenticator(self.domain_id)
-        if auth is not None:
-            self.msl_cache.deserialize(auth)
+        if isinstance(auth, dict):
+            self.graph_token = auth
+            # the msal version used a string here
+        else:
+            self.graph_token = None
 
         connector = aiohttp.connector.TCPConnector(
             limit=MAX_CONCURRENT_OPERATIONS,
@@ -118,78 +121,93 @@ class GraphAPI(oauth.Account):
         self.session = aiohttp.ClientSession(connector=connector,
                                              raise_for_status=False)
 
-        self.msal = msal.PublicClientApplication(
-            client_id="122f4826-adf9-465d-8e84-e9d00bc9f234",
-            authority=f"https://login.microsoftonline.com/{self.tenant}",
-            token_cache=self.msl_cache)
-
         if self.oauth_smtp:
             self.owa_scopes = self.owa_scopes + [
                 "https://outlook.office.com/SMTP.Send"
             ]
 
-    def _cached_authenticate(self):
-        accounts = self.msal.get_accounts(self.user)
-        if len(accounts) != 1:
+        self.redirect_url = self.cfg.web_app.url + "oauth2/msal"
+        self.oauth = oauth.OAuth2Session(
+            client_id=self.client_id,
+            client=oauth.NativePublicApplicationClient(self.client_id),
+            redirect_uri=self.redirect_url,
+            token=self.graph_token,
+            strict_scopes=False)
+
+        await self._do_authenticate()
+
+    def _set_token(self, graph_token, owa_token):
+        # Only store the refresh token, access tokens are more dangerous to
+        # keep as they are valid across a password change for their lifetime
+        self.cfg.msgdb.set_authenticator(
+            self.domain_id,
+            {"refresh_token": graph_token["refresh_token"]})
+        self.headers["Authorization"] = graph_token[
+            "token_type"] + " " + graph_token["access_token"]
+        self.owa_headers["Authorization"] = owa_token[
+            "token_type"] + " " + owa_token["access_token"]
+        self.graph_token = graph_token
+        self.owa_token = owa_token
+        return True
+
+    async def _refresh_authenticate(self):
+        if self.graph_token is None:
             return False
 
         try:
-            if self.graph_token is None:
-                self.graph_token = self.msal.acquire_token_silent(
-                    scopes=self.graph_scopes, account=accounts[0])
-            if self.graph_token is None or "access_token" not in self.graph_token:
-                self.graph_token = None
-                return False
-
-            if self.owa_token is None:
-                self.owa_token = self.msal.acquire_token_silent(
-                    scopes=self.owa_scopes, account=accounts[0])
-            if self.owa_token is None or "access_token" not in self.owa_token:
-                self.owa_token = None
-                return False
-        except requests.RequestException as e:
-            self.cfg.logger.error(f"msal failed on request {e}")
+            graph_token, owa_token = await asyncio.gather(
+                self.oauth.refresh_token(
+                    self.session,
+                    f'https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/token',
+                    client_id=self.client_id,
+                    scopes=self.graph_scopes,
+                    refresh_token=self.graph_token["refresh_token"]),
+                self.oauth.refresh_token(
+                    self.session,
+                    f'https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/token',
+                    client_id=self.client_id,
+                    scopes=self.owa_scopes,
+                    refresh_token=self.graph_token["refresh_token"]))
+        except oauthlib.oauth2.OAuth2Error:
             self.graph_token = None
             self.owa_token = None
             return False
-
-        self.headers["Authorization"] = self.graph_token[
-            "token_type"] + " " + self.graph_token["access_token"]
-        self.owa_headers["Authorization"] = self.owa_token[
-            "token_type"] + " " + self.owa_token["access_token"]
-        self.cfg.msgdb.set_authenticator(self.domain_id,
-                                         self.msl_cache.serialize())
-        return True
+        return self._set_token(graph_token, owa_token)
 
     @util.log_progress(lambda self: f"Azure AD Authentication for {self.name}")
     async def _do_authenticate(self):
-        while not self._cached_authenticate():
+        while not await self._refresh_authenticate():
             self.graph_token = None
             self.owa_token = None
 
-            redirect_url = self.cfg.web_app.url + "oauth2/msal"
             state = hex(id(self)) + secrets.token_urlsafe(8)
-            url = self.msal.get_authorization_request_url(
-                scopes=self.graph_scopes + self.owa_scopes,
+            url = self.oauth.authorization_url(
+                f'https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/authorize',
                 state=state,
-                login_hint=self.user,
-                redirect_uri=redirect_url)
+                scopes=self.graph_scopes + self.owa_scopes,
+                login_hint=self.user)
 
             print(
                 f"Goto {self.cfg.web_app.url} in a web browser to authenticate"
             )
             webbrowser.open(url)
-            q = await self.cfg.web_app.auth_redir(url, state, redirect_url)
-            code = q["code"]
+            q = await self.cfg.web_app.auth_redir(url, state,
+                                                  self.redirect_url)
 
-            try:
-                self.graph_token = self.msal.acquire_token_by_authorization_code(
-                    code=code,
-                    scopes=self.graph_scopes,
-                    redirect_uri=redirect_url)
-            except requests.RequestException as e:
-                self.cfg.logger.error(f"msal failed on request {e}")
-                await asyncio.sleep(10)
+            graph_token = await self.oauth.fetch_token(
+                self.session,
+                f'https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/token',
+                include_client_id=True,
+                scopes=self.graph_scopes,
+                code=q["code"])
+            owa_token = await self.oauth.refresh_token(
+                self.session,
+                f'https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/token',
+                client_id=self.client_id,
+                scopes=self.owa_scopes,
+                refresh_token=graph_token["refresh_token"])
+            if self._set_token(graph_token, owa_token):
+                return
 
     async def authenticate(self):
         """Obtain OAUTH bearer tokens for MS services. For users this has to be done
@@ -198,6 +216,10 @@ class GraphAPI(oauth.Account):
         tokens within some limited time period."""
         # Ensure we only ever have one authentication open at once. Other
         # threads will all block here on the single authenticator.
+        if "Authorization" in self.headers:
+            del self.headers["Authorization"]
+        if "Authorization" in self.owa_headers:
+            del self.owa_headers["Authorization"]
         if self.authenticator is None:
             self.authenticator = asyncio.create_task(self._do_authenticate())
         auth = self.authenticator

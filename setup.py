@@ -35,10 +35,8 @@ setup(
         'aiohttp>=3.0.1',
         'cryptography>=2.8',
         'keyring>=21',
-        'msal>=1.0',
         'oauthlib>=3.1',
         'pyinotify>=0.9.6',
-        'requests>=2.18',
     ],
     include_package_data=True,
     zip_safe=False)
