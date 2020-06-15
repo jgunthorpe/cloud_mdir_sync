@@ -7,7 +7,6 @@ import logging
 import os
 import pickle
 import secrets
-import webbrowser
 from typing import Any, Dict, Optional, Union
 
 import aiohttp
@@ -187,10 +186,6 @@ class GraphAPI(oauth.Account):
                 scopes=self.graph_scopes + self.owa_scopes,
                 login_hint=self.user)
 
-            print(
-                f"Goto {self.cfg.web_app.url} in a web browser to authenticate"
-            )
-            webbrowser.open(url)
             q = await self.cfg.web_app.auth_redir(url, state,
                                                   self.redirect_url)
 

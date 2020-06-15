@@ -6,7 +6,6 @@ import datetime
 import functools
 import logging
 import secrets
-import webbrowser
 from typing import Dict, List, Optional, Set
 
 import aiohttp
@@ -147,10 +146,6 @@ class GmailAPI(oauth.Account):
                 scopes=self.scopes,
                 login_hint=self.user)
 
-            print(
-                f"Goto {self.cfg.web_app.url} in a web browser to authenticate"
-            )
-            webbrowser.open(url)
             q = await self.cfg.web_app.auth_redir(url, state,
                                                   self.redirect_url)
 

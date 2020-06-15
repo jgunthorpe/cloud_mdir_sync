@@ -4,6 +4,7 @@ import base64
 import hashlib
 import os
 import secrets
+import webbrowser
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Dict, List, Optional
 
@@ -59,6 +60,19 @@ class WebServer(object):
         redirects back to the localhost server.  The final query paremeters
         will be returned by this function"""
         queue = asyncio.Queue()
+
+        # If this is the first auth to start then automatically launch a
+        # browser, otherwise assume the already running browser will take care
+        # of things
+        if not self.auth_redirs:
+            print(
+                f"Goto {self.url} in a web browser to authenticate (opening browser)"
+            )
+            webbrowser.open(url)
+        else:
+            print(
+                f"Goto {self.url} in a web browser to authenticate (reusing browser)"
+            )
         self.auth_redirs[state] = (url, queue, redir_url)
         return await queue.get()
 
