@@ -11,18 +11,15 @@ from . import config, oauth
 class CredentialServer(object):
     """Serve XOAUTH2 bearer tokens over a unix domain socket. The client
     writes the user to obtain a token for and the server responds with the
-    token"""
-    def __init__(self,
-                 cfg: config.Config,
-                 path: str,
-                 accounts: List[oauth.Account],
-                 umask=0o600):
+    token. protocols can be IMAP or SMTP"""
+    def __init__(self, cfg: config.Config, path: str,
+                 accounts: List[oauth.Account], umask, protocols):
         self.cfg = cfg
         self.path = os.path.abspath(os.path.expanduser(path))
         self.umask = umask
         self.accounts = {}
         for I in accounts:
-            I.oauth_smtp = True
+            I.protocols.update(protocols)
             self.accounts[I.user] = I
 
     async def go(self):
@@ -55,10 +52,10 @@ class CredentialServer(object):
                 f"Credential request {proto!r} {opts} {user!r}")
 
             account = self.accounts.get(user)
-            if account is None:
+            if account is None or proto not in account.protocols:
                 return
 
-            xoauth2 = await account.get_xoauth2_bytes("SMTP")
+            xoauth2 = await account.get_xoauth2_bytes(proto)
             if xoauth2 is None:
                 return
             writer.write(xoauth2)

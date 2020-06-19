@@ -19,16 +19,15 @@ if TYPE_CHECKING:
 
 class Account(object):
     """An OAUTH2 account"""
-    oauth_smtp = False
 
     def __init__(self, cfg: "config.Config", user: str):
         self.cfg = cfg
         self.user = user
+        self.protocols = set()
 
     @abstractmethod
-    async def get_xoauth2_bytes(self, proto: str) -> bytes:
-        pass
-
+    async def get_xoauth2_bytes(self, proto: str) -> Optional[bytes]:
+        return None
 
 class WebServer(object):
     """A small web server is used to manage oauth requests. The user should point a browser

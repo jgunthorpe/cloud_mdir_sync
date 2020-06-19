@@ -116,9 +116,18 @@ class Config(object):
         self.local_mboxes.append(MailDirMailbox(self, directory))
         return self.local_mboxes[-1]
 
-    def CredentialServer(self, path: str, accounts: List, umask=0o600):
+    def CredentialServer(self,
+                         path: str,
+                         accounts: List,
+                         umask=0o600,
+                         protocols=["SMTP"]):
+        """Serve XOAUTH2 bearer tokens over a unix domain socket. The client
+        writes the user to obtain a token for and the server responds with the
+        token. protocols can be IMAP or SMTP. The cms-oauth program interacts
+        with this server."""
         from .credsrv import CredentialServer
-        self.async_tasks.append(CredentialServer(self, path, accounts, umask))
+        self.async_tasks.append(
+            CredentialServer(self, path, accounts, umask, protocols))
         return self.async_tasks[-1]
 
     def _direct_message(self, msg):

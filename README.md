@@ -261,6 +261,12 @@ CMS includes a OAUTH broker than can export a SMTP access token to local SMTP
 delivery agents. The [Outbound mail through SMTP](doc/smtp.md) page describes
 this configuration.
 
+# OAUTH only
+
+CMS can also act as an OAUTH broker for other mail access programs, in this
+mode it does not handle email. The [Inbound mail through IMAP](doc/imap.md)
+page describes this configuration.
+
 # Future Work/TODO
 - Use delta queries on mailboxes with MS Graph. Delta queries allow
   downloading only changed message meta-data and will accelerate polling of

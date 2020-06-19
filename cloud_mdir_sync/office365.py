@@ -120,9 +120,13 @@ class GraphAPI(oauth.Account):
         self.session = aiohttp.ClientSession(connector=connector,
                                              raise_for_status=False)
 
-        if self.oauth_smtp:
+        if "SMTP" in self.protocols:
             self.owa_scopes = self.owa_scopes + [
                 "https://outlook.office.com/SMTP.Send"
+            ]
+        if "IMAP" in self.protocols:
+            self.owa_scopes = self.owa_scopes + [
+                "https://outlook.office.com/IMAP.AccessAsUser.All"
             ]
 
         self.redirect_url = self.cfg.web_app.url + "oauth2/msal"
@@ -452,13 +456,13 @@ class GraphAPI(oauth.Account):
     async def close(self):
         await self.session.close()
 
-    async def get_xoauth2_bytes(self, proto: str) -> bytes:
+    async def get_xoauth2_bytes(self, proto: str) -> Optional[bytes]:
         """Return the xoauth2 byte string for the given protocol to login to
         this account."""
         while self.owa_token is None:
             await self.authenticate()
 
-        if proto == "SMTP":
+        if proto == "SMTP" or proto == "IMAP":
             res = 'user=%s\1auth=%s %s\1\1' % (self.user,
                                                self.owa_token["token_type"],
                                                self.owa_token["access_token"])
