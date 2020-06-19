@@ -77,7 +77,7 @@ async def asyncio_complete(*awo_list):
     is thrown then all the awaitables are canceled"""
     g = asyncio.gather(*awo_list)
     try:
-        await g
+        return await g
     finally:
         g.cancel()
         await asyncio.gather(*awo_list, return_exceptions=True)

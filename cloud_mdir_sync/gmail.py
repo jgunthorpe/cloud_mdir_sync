@@ -86,11 +86,13 @@ class GmailAPI(oauth.Account):
         self.session = aiohttp.ClientSession(connector=connector,
                                              raise_for_status=False)
 
-        self.scopes = [
-            "https://www.googleapis.com/auth/gmail.modify",
-        ]
+        self.scopes = []
+        if "_CMS_" in self.protocols:
+            self.scopes.append("https://www.googleapis.com/auth/gmail.modify")
         if "SMTP" in self.protocols or "IMAP" in self.protocols:
             self.scopes.append("https://mail.google.com/")
+        if not self.scopes:
+            self.scopes.append("openid")
 
         self.redirect_url = cfg.web_app.url + "oauth2/gmail"
         self.api_token = cfg.msgdb.get_authenticator(self.domain_id)
@@ -140,7 +142,10 @@ class GmailAPI(oauth.Account):
                 client_secret=self.client_secret,
                 scopes=self.scopes,
                 refresh_token=self.api_token["refresh_token"])
-        except oauthlib.oauth2.OAuth2Error:
+        except (oauthlib.oauth2.OAuth2Error, Warning):
+            self.cfg.logger.exception(
+                f"OAUTH initial exchange failed for {self.domain_id}, sleeping for retry"
+            )
             self.api_token = None
             return False
         return self._set_token(api_token)
@@ -163,13 +168,20 @@ class GmailAPI(oauth.Account):
             q = await self.cfg.web_app.auth_redir(url, state,
                                                   self.redirect_url)
 
-            api_token = await self.oauth.fetch_token(
-                self.session,
-                'https://oauth2.googleapis.com/token',
-                include_client_id=True,
-                client_secret=self.client_secret,
-                scopes=self.scopes,
-                code=q["code"])
+            try:
+                api_token = await self.oauth.fetch_token(
+                    self.session,
+                    'https://oauth2.googleapis.com/token',
+                    include_client_id=True,
+                    client_secret=self.client_secret,
+                    scopes=self.scopes,
+                    code=q["code"])
+            except (oauthlib.oauth2.OAuth2Error, Warning):
+                self.cfg.logger.exception(
+                    f"OAUTH initial exchange failed for {self.domain_id}, sleeping for retry"
+                )
+                await asyncio.sleep(1)
+                continue
             if self._set_token(api_token):
                 return
 
@@ -338,6 +350,7 @@ class GMailMailbox(mailbox.Mailbox):
         self.gmail = gmail
         self.gmail_messages = {}
         self.max_fetches = asyncio.Semaphore(10)
+        gmail.protocols.add("_CMS_")
         gmail.mailboxes.append(self)
 
     def __repr__(self):

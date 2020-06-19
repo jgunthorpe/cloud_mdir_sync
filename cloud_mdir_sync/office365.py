@@ -80,14 +80,8 @@ def _retry_protect(func):
 class GraphAPI(oauth.Account):
     """An OAUTH2 authenticated session to the Microsoft Graph API"""
     client_id = "122f4826-adf9-465d-8e84-e9d00bc9f234"
-    graph_scopes = [
-        "https://graph.microsoft.com/User.Read",
-        "https://graph.microsoft.com/Mail.ReadWrite",
-        "offline_access",
-    ]
     graph_token: Optional[Dict[str,str]] = None
-    owa_scopes = ["https://outlook.office.com/mail.read"]
-    owa_token = None
+    owa_token: Optional[Dict[str,str]] = None
     authenticator = None
 
     def __init__(self, cfg: config.Config, user: str, tenant: str):
@@ -109,10 +103,8 @@ class GraphAPI(oauth.Account):
     async def go(self):
         auth = self.cfg.msgdb.get_authenticator(self.domain_id)
         if isinstance(auth, dict):
-            self.graph_token = auth
+            self.owa_token = auth
             # the msal version used a string here
-        else:
-            self.graph_token = None
 
         connector = aiohttp.connector.TCPConnector(
             limit=MAX_CONCURRENT_OPERATIONS,
@@ -120,14 +112,25 @@ class GraphAPI(oauth.Account):
         self.session = aiohttp.ClientSession(connector=connector,
                                              raise_for_status=False)
 
+        self.graph_scopes = []
+        self.owa_scopes = []
+        if "_CMS_" in self.protocols:
+            self.graph_scopes.extend([
+                "https://graph.microsoft.com/User.Read",
+                "https://graph.microsoft.com/Mail.ReadWrite"
+            ])
+            self.owa_scopes.append("https://outlook.office.com/mail.read")
         if "SMTP" in self.protocols:
-            self.owa_scopes = self.owa_scopes + [
-                "https://outlook.office.com/SMTP.Send"
-            ]
+            self.owa_scopes.append("https://outlook.office.com/SMTP.Send")
         if "IMAP" in self.protocols:
-            self.owa_scopes = self.owa_scopes + [
-                "https://outlook.office.com/IMAP.AccessAsUser.All"
-            ]
+            self.owa_scopes.append(
+                "https://outlook.office.com/IMAP.AccessAsUser.All")
+        if self.graph_scopes:
+            self.graph_scopes.append("offline_access")
+        else:
+            if not self.owa_scopes:
+                self.owa_scopes.append("openid")
+            self.owa_scopes.append("offline_access")
 
         self.redirect_url = self.cfg.web_app.url + "oauth2/msal"
         self.oauth = oauth.OAuth2Session(
@@ -144,9 +147,10 @@ class GraphAPI(oauth.Account):
         # keep as they are valid across a password change for their lifetime
         self.cfg.msgdb.set_authenticator(
             self.domain_id,
-            {"refresh_token": graph_token["refresh_token"]})
-        self.headers["Authorization"] = graph_token[
-            "token_type"] + " " + graph_token["access_token"]
+            {"refresh_token": owa_token["refresh_token"]})
+        if graph_token:
+            self.headers["Authorization"] = graph_token[
+                "token_type"] + " " + graph_token["access_token"]
         self.owa_headers["Authorization"] = owa_token[
             "token_type"] + " " + owa_token["access_token"]
         self.graph_token = graph_token
@@ -154,26 +158,39 @@ class GraphAPI(oauth.Account):
         return True
 
     async def _refresh_authenticate(self):
-        if self.graph_token is None:
+        if self.owa_token is None:
             return False
 
         try:
-            graph_token, owa_token = await asyncio.gather(
-                self.oauth.refresh_token(
-                    self.session,
-                    f'https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/token',
-                    client_id=self.client_id,
-                    scopes=self.graph_scopes,
-                    refresh_token=self.graph_token["refresh_token"]),
+            tasks = []
+            if self.graph_scopes:
+                tasks.append(
+                    self.oauth.refresh_token(
+                        self.session,
+                        f'https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/token',
+                        client_id=self.client_id,
+                        scopes=self.graph_scopes,
+                        refresh_token=self.owa_token["refresh_token"]))
+            else:
+                async def RetNone():
+                    return None
+                tasks.append(RetNone())
+
+            tasks.append(
                 self.oauth.refresh_token(
                     self.session,
                     f'https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/token',
                     client_id=self.client_id,
                     scopes=self.owa_scopes,
-                    refresh_token=self.graph_token["refresh_token"]))
-        except oauthlib.oauth2.OAuth2Error:
+                    refresh_token=self.owa_token["refresh_token"]))
+            graph_token, owa_token = await asyncio_complete(*tasks)
+        except (oauthlib.oauth2.OAuth2Error, Warning) :
+            self.cfg.logger.exception(
+                f"OAUTH initial exchange failed for {self.domain_id}, sleeping for retry"
+            )
             self.graph_token = None
             self.owa_token = None
+            await asyncio.sleep(1)
             return False
         return self._set_token(graph_token, owa_token)
 
@@ -193,18 +210,29 @@ class GraphAPI(oauth.Account):
             q = await self.cfg.web_app.auth_redir(url, state,
                                                   self.redirect_url)
 
-            graph_token = await self.oauth.fetch_token(
-                self.session,
-                f'https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/token',
-                include_client_id=True,
-                scopes=self.graph_scopes,
-                code=q["code"])
-            owa_token = await self.oauth.refresh_token(
-                self.session,
-                f'https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/token',
-                client_id=self.client_id,
-                scopes=self.owa_scopes,
-                refresh_token=graph_token["refresh_token"])
+            try:
+                owa_token = await self.oauth.fetch_token(
+                    self.session,
+                    f'https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/token',
+                    include_client_id=True,
+                    scopes=self.owa_scopes,
+                    code=q["code"])
+
+                graph_token = None
+                if self.graph_scopes:
+                    graph_token = await self.oauth.refresh_token(
+                        self.session,
+                        f'https://login.microsoftonline.com/{self.tenant}/oauth2/v2.0/token',
+                        client_id=self.client_id,
+                        scopes=self.graph_scopes,
+                        refresh_token=owa_token["refresh_token"])
+            except (oauthlib.oauth2.OAuth2Error, Warning):
+                self.cfg.logger.exception(
+                    f"OAUTH initial exchange failed for {self.domain_id}, sleeping for retry"
+                )
+                await asyncio.sleep(1)
+                continue
+
             if self._set_token(graph_token, owa_token):
                 return
 
@@ -490,6 +518,7 @@ class O365Mailbox(mailbox.Mailbox):
         super().__init__(cfg)
         self.mailbox = mailbox
         self.graph = graph
+        graph.protocols.add("_CMS_")
         self.max_fetches = asyncio.Semaphore(10)
 
     def __repr__(self):
