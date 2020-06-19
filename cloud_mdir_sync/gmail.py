@@ -77,6 +77,7 @@ class GmailAPI(oauth.Account):
     def __init__(self, cfg: config.Config, user: str):
         super().__init__(cfg, user)
         self.domain_id = f"gmail-{user}"
+        self.mailboxes = []
 
     async def go(self):
         cfg = self.cfg
@@ -100,6 +101,18 @@ class GmailAPI(oauth.Account):
             token=self.api_token)
 
         await self._do_authenticate()
+        asyncio.create_task(self._poll_for_changes())
+
+    async def _poll_for_changes(self):
+        while True:
+            await asyncio.sleep(60)
+            profile = await self.get_json("v1","/users/me/profile")
+            history_id = int(profile["historyId"])
+            for mbox in self.mailboxes:
+                if (mbox.history_delta is not None
+                        and int(mbox.history_delta[1]) < history_id):
+                    mbox.need_update = True
+                    mbox.changed_event.set()
 
     def _set_token(self, api_token):
         # Only store the refresh token, access tokens are more dangerous to
@@ -314,7 +327,6 @@ class GMailMailbox(mailbox.Mailbox):
     supported_flags = (messages.Message.FLAG_READ
                        | messages.Message.FLAG_FLAGGED
                        | messages.Message.FLAG_DELETED)
-    timer = None
     gmail: GmailAPI
     gmail_messages: Dict[str, GMailMessage]
     history_delta = None
@@ -326,6 +338,7 @@ class GMailMailbox(mailbox.Mailbox):
         self.gmail = gmail
         self.gmail_messages = {}
         self.max_fetches = asyncio.Semaphore(10)
+        gmail.mailboxes.append(self)
 
     def __repr__(self):
         return f"<GMailMailbox at {id(self):x} for {self.gmail.domain_id} {self.label_name}>"
@@ -504,14 +517,6 @@ class GMailMailbox(mailbox.Mailbox):
             for msg in self.history_delta[0] if msg.content_hash is not None
         }
         self.need_update = False
-        if self.timer:
-            self.timer.cancel()
-            self.timer = None
-        self.timer = self.cfg.loop.call_later(60, self._timer)
-
-    def _timer(self):
-        self.need_update = True
-        self.changed_event.set()
 
     def force_content(self, msgs):
         raise RuntimeError("Cannot move messages into the Cloud")
