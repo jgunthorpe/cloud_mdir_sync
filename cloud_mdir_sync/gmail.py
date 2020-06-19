@@ -327,6 +327,9 @@ class GMailMailbox(mailbox.Mailbox):
         self.gmail_messages = {}
         self.max_fetches = asyncio.Semaphore(10)
 
+    def __repr__(self):
+        return f"<GMailMailbox at {id(self):x} for {self.gmail.domain_id} {self.label_name}>"
+
     async def setup_mbox(self):
         """Setup access to the authenticated API domain for this endpoint"""
         self.name = f"{self.gmail.user}:{self.label_name}"

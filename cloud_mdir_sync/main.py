@@ -20,6 +20,9 @@ def route_cloud_messages(cfg: config.Config) -> messages.MBoxDict_Type:
         msgs[mbox] = {}
     for mbox in cfg.cloud_mboxes:
         for ch, msg in mbox.messages.items():
+            if ch not in cfg.msgdb.file_hashes:
+                config.logger.error(
+                    f"Bad CH in route_cloud_messages {ch}, {mbox!r} {msg!r}")
             dest = cfg.direct_message(msg)
             msgs[dest][ch] = msg
     return msgs

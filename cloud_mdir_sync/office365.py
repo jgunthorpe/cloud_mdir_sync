@@ -488,6 +488,9 @@ class O365Mailbox(mailbox.Mailbox):
         self.graph = graph
         self.max_fetches = asyncio.Semaphore(10)
 
+    def __repr__(self):
+        return f"<O365Mailbox at {id(self):x} for {self.graph.domain_id} {self.mailbox}>"
+
     async def setup_mbox(self):
         """Setup access to the authenticated API domain for this endpoint"""
         cfg = self.cfg
@@ -603,7 +606,9 @@ class O365Mailbox(mailbox.Mailbox):
         for msg in msgs:
             # Something went wrong?
             if msg.content_hash is not None:
+                assert msg.content_hash in self.msgdb.file_hashes
                 res[msg.content_hash] = msg
+
         self.messages = res
         self.need_update = False
         if not self.use_owa_subscribe:
