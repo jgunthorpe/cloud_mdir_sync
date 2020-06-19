@@ -36,6 +36,7 @@ def _retry_protect(func):
                         e.code == 400 or  # Bad Request
                         e.code == 509 or  # Bandwidth Limit Exceeded
                         e.code == 429 or  # Too Many Requests
+                        e.code == 502 or  # Bad Gateway
                         e.code == 504 or  # Gateway Timeout
                         e.code == 200):  # Success, but error JSON
                     self.cfg.logger.error(f"Gmail returns {e}, delaying")
