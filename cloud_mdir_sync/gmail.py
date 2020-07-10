@@ -438,7 +438,7 @@ class GMailMailbox(mailbox.Mailbox):
             if "labelIds" in jmsg:
                 gmsgs[gmail_id] = labels = set(jmsg["labelIds"])
             else:
-                if gmail_id not in msgs:
+                if gmail_id not in gmsgs:
                     gmsgs[gmail_id] = labels = set()
                 else:
                     labels = gmsgs[gmail_id]
