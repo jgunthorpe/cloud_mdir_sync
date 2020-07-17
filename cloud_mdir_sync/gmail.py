@@ -6,6 +6,7 @@ import datetime
 import functools
 import logging
 import secrets
+import time
 from typing import Dict, List, Optional, Set
 
 import aiohttp
@@ -278,7 +279,8 @@ class GmailAPI(oauth.Account):
     async def get_xoauth2_bytes(self, proto: str) -> Optional[bytes]:
         """Return the xoauth2 byte string for the given protocol to login to
         this account."""
-        while self.api_token is None:
+        while (self.api_token is None
+               or self.api_token["expires_at"] <= time.time() + 10):
             await self.authenticate()
 
         if proto == "SMTP" or proto == "IMAP":

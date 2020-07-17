@@ -7,6 +7,7 @@ import logging
 import os
 import pickle
 import secrets
+import time
 from typing import Any, Dict, Optional, Union
 
 import aiohttp
@@ -487,7 +488,8 @@ class GraphAPI(oauth.Account):
     async def get_xoauth2_bytes(self, proto: str) -> Optional[bytes]:
         """Return the xoauth2 byte string for the given protocol to login to
         this account."""
-        while self.owa_token is None:
+        while (self.owa_token is None
+               or self.owa_token["expires_at"] <= time.time() + 10):
             await self.authenticate()
 
         if proto == "SMTP" or proto == "IMAP":
