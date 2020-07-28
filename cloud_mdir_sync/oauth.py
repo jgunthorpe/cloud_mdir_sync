@@ -13,6 +13,8 @@ import aiohttp.web
 import oauthlib
 import oauthlib.oauth2
 
+import urllib.parse
+
 if TYPE_CHECKING:
     from . import config
 
@@ -46,7 +48,8 @@ class WebServer(object):
     async def go(self):
         self.runner = aiohttp.web.AppRunner(self.web_app)
         await self.runner.setup()
-        site = aiohttp.web.TCPSite(self.runner, '127.0.0.1', 8080)
+        url = urllib.parse.urlparse(self.url)
+        site = aiohttp.web.TCPSite(self.runner, url.hostname, url.port)
         await site.start()
 
     async def close(self):
