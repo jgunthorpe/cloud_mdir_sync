@@ -378,6 +378,11 @@ class GraphAPI(oauth.Account):
             async for _ in op.content.iter_any():
                 pass
 
+    @_retry_protect
+    async def __get_json_paged_next(self, uri):
+        async with self.session.get(uri, headers=self.headers) as op:
+            return await self._check_json(op)
+
     async def get_json_paged(self, ver, path, params=None):
         """Return an iterator that iterates over every JSON element in a paged
         result"""
@@ -389,8 +394,7 @@ class GraphAPI(oauth.Account):
             uri = resp.get("@odata.nextLink")
             if uri is None:
                 break
-            async with self.session.get(uri, headers=self.headers) as op:
-                resp = await self._check_json(op)
+            resp = await self.__get_json_paged_next(uri)
 
     async def _execute_batch(self, batch):
         resp = await self.post_json("v1.0", "/$batch", batch)
