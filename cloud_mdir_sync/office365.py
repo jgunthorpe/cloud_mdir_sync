@@ -70,8 +70,8 @@ def _retry_protect(func):
                 # Other errors we retry after resetting the mailbox
                 raise
             except (asyncio.TimeoutError,
-                    aiohttp.client_exceptions.ClientError):
-                self.cfg.logger.debug(f"Got non-HTTP Error in {func}")
+                    aiohttp.client_exceptions.ClientError) as e:
+                self.cfg.logger.debug(f"Got non-HTTP Error in {func} {e!r}")
                 await asyncio.sleep(10)
                 continue
 
