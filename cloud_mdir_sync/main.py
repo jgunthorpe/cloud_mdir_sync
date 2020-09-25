@@ -74,13 +74,15 @@ async def synchronize_mail(cfg: config.Config):
                                          for mbox in cfg.all_mboxes()
                                          if mbox.need_update))
 
-                nmsgs = route_cloud_messages(cfg)
                 if msgs is not None:
                     await update_cloud_from_local(cfg, msgs)
-                elif cfg.args.OFFLINE:
-                    await update_cloud_from_local(cfg,
-                                                  nmsgs,
-                                                  offline_mode=True)
+                    nmsgs = route_cloud_messages(cfg)
+                else:
+                    nmsgs = route_cloud_messages(cfg)
+                    if cfg.args.OFFLINE:
+                        await update_cloud_from_local(cfg,
+                                                      nmsgs,
+                                                      offline_mode=True)
 
                 force_local_to_cloud(cfg, nmsgs)
                 msgs = nmsgs
