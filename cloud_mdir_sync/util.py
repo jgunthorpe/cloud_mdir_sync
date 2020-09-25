@@ -75,9 +75,8 @@ async def asyncio_complete(*awo_list):
     """This is like asyncio.gather but it always ensures that the list of
     awaitable objects is completed upon return. For instance if an exception
     is thrown then all the awaitables are canceled"""
-    g = asyncio.gather(*awo_list)
-    try:
-        return await g
-    finally:
-        g.cancel()
-        await asyncio.gather(*awo_list, return_exceptions=True)
+    res = await asyncio.gather(*awo_list, return_exceptions=True)
+    for I in res:
+        if isinstance(I, Exception):
+            raise I
+    return res
