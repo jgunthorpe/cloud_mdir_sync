@@ -211,8 +211,9 @@ class MessageDB(object):
         for cid,ch in res.items():
             ncid = (cid[0], cid[1], None)
             if no_msg_id.get(ncid, ch) != ch:
-                ch = ""
-            no_msg_id[ncid] = ch
+                del no_msg_id[ncid]
+            else:
+                no_msg_id[ncid] = ch
         self.content_hashes_cloud = no_msg_id
 
     def _sha1_fn(self, fn):
@@ -297,7 +298,7 @@ class MessageDB(object):
         """Return a file for later use by store_hashed_file"""
         return tempfile.NamedTemporaryFile(dir=self.hashes_dir)
 
-    def store_hashed_msg(self, msg, tmpf):
+    def store_hashed_msg(self, msg : Message, tmpf):
         """Retain the content tmpf in the hashed file database"""
         tmpf.flush()
         ch = self._sha1_fn(tmpf.name)
@@ -317,8 +318,6 @@ class MessageDB(object):
         cid = msg.cid()
         self.content_hashes[msg.cid()] = ch
         ncid = (cid[0], cid[1], None)
-        if self.content_hashes_cloud.get(ncid, ch) != ch:
-            ch = ""
         self.content_hashes_cloud[ncid] = ch
 
         assert self.have_content(msg)
