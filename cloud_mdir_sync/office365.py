@@ -298,7 +298,7 @@ class GraphAPI(oauth.Account):
                     if carry:
                         data = carry + data
                     data = data.replace(b"\r\n", b"\n")
-                    if data[-1] == b'\r':
+                    if data[-1:] == b'\r':
                         carry = data[-1:len(data)]
                         data = data[:-1]
                     else:
