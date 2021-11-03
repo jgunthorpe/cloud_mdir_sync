@@ -88,8 +88,8 @@ out to an external program to get an OAUTH token. An [example
 configuration](example-msmtp.conf) is provided showing how to connect it to
 CMS.
 
-Support for gmail requires msmtp 1.8.4, and support for O365 requires a
-[patch](msmtp-xoauth2.patch).
+Support for gmail requires msmtp 1.8.4, and support for O365 requires msmtp
+1.8.13.
 
 # git send-email
 
