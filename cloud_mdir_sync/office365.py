@@ -8,6 +8,7 @@ import os
 import pickle
 import secrets
 import time
+from json import dumps as jdumps
 from typing import Any, Dict, Optional, Union
 
 import aiohttp
@@ -530,16 +531,23 @@ class O365Mailbox(mailbox.Mailbox):
     def __repr__(self):
         return f"<O365Mailbox at {id(self):x} for {self.graph.domain_id} {self.mailbox}>"
 
+    async def get_mbox(self, path:list[str], parentid:str = None) -> mailbox.Mailbox:
+        self.cfg.logger.debug(f"query: {'/'.join(path)}, parentid: {parentid}")
+        child_folders = "" if not parentid else f"/{parentid}/childFolders"
+        mbox = await self.graph.get_json("v1.0",
+                        f"/me/mailFolders" + child_folders,
+                        params={"$filter": f"displayName eq '{path[0]}'"})
+        if len(path) == 1:
+            return mbox
+        return await self.get_mbox(path[1:], mbox['value'][0]["id"])
+
     async def setup_mbox(self):
         """Setup access to the authenticated API domain for this endpoint"""
         cfg = self.cfg
         self.loop = cfg.loop
         self.name = f"{self.graph.name}:{self.mailbox}"
-
-        json = await self.graph.get_json(
-            "v1.0",
-            f"/me/mailFolders",
-            params={"$filter": f"displayName eq '{self.mailbox}'"})
+        json = await self.get_mbox(self.mailbox.split("/"))
+        self.cfg.logger.debug(f"mbox: {self.mailbox}\n{jdumps(json, indent=4)}")
         if len(json["value"]) != 1:
             raise ValueError(f"Invalid mailbox name {self.mailbox!r}")
         self.json = json["value"][0]
