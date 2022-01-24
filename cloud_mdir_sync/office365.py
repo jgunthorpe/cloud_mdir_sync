@@ -799,11 +799,6 @@ class O365Mailbox(mailbox.Mailbox):
             if cmsg is not None and old_cmsg is not None and lmsg is not None:
                 self._update_msg_flags(todo_flags, cmsg, old_cmsg.flags, lmsg)
 
-            # Debugging that the message really is to be deleted
-            if cmsg is not None and lmsg is None:
-                assert os.stat(os.path.join(self.msgdb.hashes_dir,
-                                            ch)).st_nlink == 1
-
             if cmsg is not None and (lmsg is None or lmsg.flags
                                      & messages.Message.FLAG_DELETED):
                 # Delete cloud message
