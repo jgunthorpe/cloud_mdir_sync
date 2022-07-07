@@ -69,7 +69,11 @@ class Config(object):
         from cryptography.fernet import Fernet
 
         ring = keyring.get_keyring()
-        res = ring.get_password("cloud_mdir_sync", "storage")
+        try:
+            res = ring.get_password("cloud_mdir_sync", "storage")
+        except keyring.errors.NoKeyringError:
+            return Fernet.generate_key()
+
         if res is None:
             res = Fernet.generate_key()
             ring.set_password("cloud_mdir_sync", "storage", res)
