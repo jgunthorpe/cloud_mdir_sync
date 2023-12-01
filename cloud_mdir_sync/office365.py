@@ -127,6 +127,9 @@ class GraphAPI(oauth.Account):
         if "IMAP" in self.protocols:
             self.owa_scopes.append(
                 "https://outlook.office.com/IMAP.AccessAsUser.All")
+        if "TODO" in self.protocols:
+            self.graph_scopes.append(
+                "https://graph.microsoft.com/Tasks.ReadWrite")
         if self.graph_scopes:
             self.graph_scopes.append("offline_access")
         else:
@@ -502,6 +505,11 @@ class GraphAPI(oauth.Account):
                                                self.owa_token["token_type"],
                                                self.owa_token["access_token"])
             return res.encode()
+        if proto == "TODO":
+            res = 'user=%s\1auth=%s %s\1\1' % (self.user,
+                                               self.graph_token["token_type"],
+                                               self.graph_token["access_token"])
+            return res.encode()
         return None
 
 
@@ -771,7 +779,7 @@ class O365Mailbox(mailbox.Mailbox):
         self.graph.batch_patch_json(
             batch,
             "v1.0",
-            f"/me/mailFolders/{self.mailbox}/messages/{cmsg.storage_id}",
+            f"/me/mailFolders/{self.mailbox_id}/messages/{cmsg.storage_id}",
             body=patch)
 
     @util.log_progress(lambda self: f"Uploading local changes for {self.name}",
@@ -805,7 +813,7 @@ class O365Mailbox(mailbox.Mailbox):
                 self.graph.batch_post_json(
                     todo_del,
                     "v1.0",
-                    f"/me/mailFolders/{self.mailbox}/messages/{cmsg.storage_id}/move",
+                    f"/me/mailFolders/{self.mailbox_id}/messages/{cmsg.storage_id}/move",
                     body={
                         "destinationId":
                         "deleteditems"
