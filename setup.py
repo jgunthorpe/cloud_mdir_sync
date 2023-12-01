@@ -32,10 +32,11 @@ setup(
     },
     python_requires=">=3.6",
     install_requires=[
-        'aiohttp>=3.0.1',
+        'aiohttp>=3.9.0b0',
         'cryptography>=2.8',
         'keyring>=21',
         'oauthlib>=3.1',
+        'pyasyncore',
         'pyinotify>=0.9.6',
     ],
     include_package_data=True,
