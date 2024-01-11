@@ -104,3 +104,42 @@ methods is used to setup a local sendmail, then use this .git_config:
         assume8bitEncoding = UTF-8
         transferEncoding = auto
 ```
+
+# Emacs smtpmail
+
+Support for XOAUTH2 in emacs smtpmail was introduced in emacs-28.0.90. The elisp
+below shows a simple configuration for supporting XOAUTH2 smtpmail
+authentication with `cms-oauth`.
+
+```elisp
+(setq auth-sources '("~/.authinfo"      ; Default auth-source in Emacs (not needed)
+                      "secrets:session" ; Use emacs auth-source to interface with libsecret
+                      ))
+
+(defun smtpmail-oauth-send-it ()
+  (secrets-delete-item "session" "smtp")
+  ;; smtpmail xoauth2 is sensitive to newlines
+  ;; Use the --no_newline flag if choosing to use shell-command-to-string instead
+  (let ((access-token (car (process-lines "cms-oauth"
+                                          "--cms_sock=/var/run/user/XXX/cms.sock"
+                                          "--proto=SMTP"
+                                          "--user=user@domain.com"
+                                          "--output=token"))))
+    ;; Create item using libsecret
+    (secrets-create-item "session" "smtp" access-token
+                          :host "smtp.server.address"
+                          :port "587"
+                          ;; secrets.el only supports strings
+                          ;;:smtp-auth "xoauth2" ;; Cannot use because of type mismatch with generic argument
+                          :user "user@domain.com")
+    )
+  (smtpmail-send-it))
+
+(setq message-send-mail-function 'smtpmail-oauth-send-it
+      user-full-name "Full Name"
+      user-mail-address "user@domain.com"
+      smtpmail-default-smtp-server "smtp.server.address"
+      smtpmail-auth-supported '(xoauth2)
+      smtpmail-smtp-user "user@domain.com"
+      smtpmail-smtp-service "587")
+```
