@@ -52,3 +52,23 @@ set imap_authenticators="xoauth2"
 set imap_oauth_refresh_command="cms-oauth --cms_sock=cms.sock --proto=IMAP --user user@domain --output=token"
 set spoolfile="imaps://outlook.office365.com/INBOX"
 ```
+
+# isync / mbsync
+
+`mbsync` can support XOAUTH2 with the Cyrus SASL OAuth2 plugin. Here is an
+example configuration excerpt, assuming `mbsync` has been correctly installed
+with the plugin.
+
+```
+IMAPAccount accountname
+# Address to connect to
+Host imap.server.address
+Port 993
+User user@domain.com
+# Using cloud-mdir-sync to manage OAuth2 bearer token
+PassCmd "cms-oauth --cms_sock=/var/run/user/XXX/cms.sock --proto=IMAP --user user@domain.com --output=token"
+AuthMechs XOAUTH2
+# Use SSL
+SSLType IMAPS
+CertificateFile /etc/ssl/certs/ca-certificates.crt
+```

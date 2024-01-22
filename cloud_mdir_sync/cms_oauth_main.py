@@ -75,6 +75,10 @@ def main():
         actual final value to send on the wire in the XOAUTH2 protocol.
         xoauth2 is used if the caller will provide the base64 conversion.
         token returns the bare access_token""")
+    parser.add_argument(
+        "--no_newline",
+        action="store_true",
+        help="""Disable printing an additional newline in the output.""")
 
     tests = parser.add_mutually_exclusive_group()
     tests.add_argument(
@@ -95,6 +99,10 @@ def main():
         and imap.gmail.com.""")
     args = parser.parse_args()
 
+    print_end = "\n"
+    if args.no_newline:
+        print_end = ""
+
     xoauth2_token = get_xoauth2_token(args)
     if args.test_smtp:
         return test_smtp(args, xoauth2_token)
@@ -102,12 +110,12 @@ def main():
         return test_imap(args, xoauth2_token)
 
     if args.output == "xoauth2-b64":
-        print(base64.b64encode(xoauth2_token.encode()).decode())
+        print(base64.b64encode(xoauth2_token.encode()).decode(), end=print_end)
     elif args.output == "token":
         g = re.match("user=\\S+\1auth=\\S+ (\\S+)\1\1", xoauth2_token)
-        print(g.group(1))
+        print(g.group(1), end=print_end)
     else:
-        print(xoauth2_token)
+        print(xoauth2_token, end=print_end)
 
 
 if __name__ == "__main__":
