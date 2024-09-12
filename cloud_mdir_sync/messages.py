@@ -102,6 +102,7 @@ class Message(object):
             return val
         val = self._read_header(hdr)
         content_msg_header[(self.content_hash, hdr)] = val
+        return val
 
 class MessageDB(object):
     """The persistent state associated with the message database. This holds:
