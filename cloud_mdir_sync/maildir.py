@@ -48,7 +48,8 @@ class MailDirMailbox(mailbox.Mailbox):
         ]
 
         for directory in dirs_to_watch:
-          self._observer.schedule(self._event_handler, directory, recursive=False)
+          self._observer.schedule(self._event_handler, directory, recursive=True)
+        self._observer.start()
 
     def _dir_changed(self, notifier):
         self.need_update = True

@@ -13,24 +13,6 @@ from watchdog.events import FileSystemEventHandler
 from . import config, mailbox, messages, oauth
 from .util import asyncio_complete
 
-
-class MailDirEventHandler(FileSystemEventHandler):
-    def __init__(self, callback):
-        self.callback = callback
-
-    def on_created(self, event):
-        self.callback()
-
-    def on_deleted(self, event):
-        self.callback()
-
-    def on_modified(self, event):
-        self.callback()
-
-    def on_moved(self, event):
-        self.callback()
-
-
 def route_cloud_messages(cfg: config.Config) -> messages.MBoxDict_Type:
     """For every cloud message figure out which local mailbox it belongs to"""
     msgs: messages.MBoxDict_Type = {}
@@ -45,7 +27,6 @@ def route_cloud_messages(cfg: config.Config) -> messages.MBoxDict_Type:
             msgs[dest][ch] = msg
     return msgs
 
-
 def force_local_to_cloud(cfg: config.Config, msgs: messages.MBoxDict_Type):
     """Make all the local mailboxes match their cloud content, overwriting any
     local changes."""
@@ -53,7 +34,6 @@ def force_local_to_cloud(cfg: config.Config, msgs: messages.MBoxDict_Type):
         if not mbox.same_messages(msgdict):
             mbox.force_content(msgdict)
     return msgs
-
 
 async def update_cloud_from_local(cfg: config.Config,
                                   msgs_by_local: messages.MBoxDict_Type,
@@ -72,7 +52,6 @@ async def update_cloud_from_local(cfg: config.Config,
     await asyncio_complete(*(
         mbox.merge_content(msgdict) for mbox, msgdict in msgs_by_cloud.items()
         if not mbox.same_messages(msgdict, tuple_form=True)))
-
 
 async def synchronize_mail(cfg: config.Config):
     """Main synchronizing loop"""
@@ -118,7 +97,6 @@ async def synchronize_mail(cfg: config.Config):
         for I in cfg.async_tasks:
             await I.close()
 
-
 def main():
     parser = argparse.ArgumentParser(
         description=
@@ -147,22 +125,13 @@ def main():
     cfg.loop = asyncio.get_event_loop()
     cfg.msgdb = messages.MessageDB(cfg)
 
-    # Set up watchdog observer
-    event_handler = MailDirEventHandler(cfg.msgdb.cleanup_msgs)
-    observer = Observer()
-    observer.schedule(event_handler, path=cfg.message_db_dir, recursive=True)
-    cfg.observer = observer
-
     # Start synchronizing
     try:
         cfg.loop.run_until_complete(synchronize_mail(cfg))
     finally:
         cfg.loop.run_until_complete(cfg.loop.shutdown_asyncgens())
-        observer.stop()
-        observer.join()
         cfg.msgdb.close()
-        cfg.loop.stop()
-
+        cfg.loop.close()
 
 if __name__ == "__main__":
     main()

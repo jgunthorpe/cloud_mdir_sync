@@ -30,7 +30,6 @@ MBoxDict_Type = Dict["mailbox.Mailbox", CHMsgDict_Type]
 CHMsgMappingDict_Type = Dict[ContentHash_Type, Tuple[Optional["Message"],
                                                      Optional["Message"]]]
 
-
 class Message(object):
     """A single message in the system"""
     content_hash: Optional[ContentHash_Type] = None
@@ -218,8 +217,12 @@ class MessageDB(object):
         self.content_hashes_cloud = no_msg_id
 
     def _sha1_fn(self, fn):
-        return subprocess.check_output(["sha1sum",
-                                        fn]).partition(b' ')[0].decode()
+        sha1 = hashlib.sha1()  # Create a new SHA-1 hash object
+        with open(fn, 'rb') as file:
+            # Read the file in chunks to avoid loading large files into memory
+            while chunk := file.read(8192):
+                sha1.update(chunk)
+        return sha1.hexdigest()  # Return the hex digest of the file
 
     def _load_file_hashes(self, hashes_dir):
         """All files in a directory into the content_hash cache. This figures out what
