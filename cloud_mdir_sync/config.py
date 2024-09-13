@@ -5,7 +5,8 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any, Dict, List
 
-import pyinotify
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 if TYPE_CHECKING:
     from . import messages, mailbox, oauth
@@ -20,7 +21,7 @@ class Config(object):
     web_app: "oauth.WebServer"
     logger: logging.Logger
     loop: asyncio.AbstractEventLoop
-    watch_manager: pyinotify.WatchManager
+    observer: Observer
     msgdb: "messages.MessageDB"
     cloud_mboxes: "List[mailbox.Mailbox]"
     local_mboxes: "List[mailbox.Mailbox]"
@@ -44,6 +45,7 @@ class Config(object):
         self.async_tasks = []
         self.message_db_dir = os.path.expanduser(self.message_db_dir)
         self.direct_message = self._direct_message
+        self.observer = Observer()  # Use watchdog observer
 
     def load_config(self, fn):
         """The configuration file is a python script that we execute with
@@ -62,7 +64,7 @@ class Config(object):
     def storage_key(self):
         """The storage key is used with fernet to manage the authentication
         data, which is stored to disk using symmetric encryption. The
-        decryption key is keld by the system keyring in some secure storage.
+        decryption key is held by the system keyring in some secure storage.
         On Linux desktop systems this is likely to be something like
         gnome-keyring."""
         import keyring
@@ -136,3 +138,4 @@ class Config(object):
 
     def _direct_message(self, msg):
         return self.local_mboxes[0]
+

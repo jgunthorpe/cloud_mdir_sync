@@ -7,10 +7,28 @@ import subprocess
 from typing import Dict, Optional, Tuple
 
 import aiohttp
-import pyinotify
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 from . import config, mailbox, messages, oauth
 from .util import asyncio_complete
+
+
+class MailDirEventHandler(FileSystemEventHandler):
+    def __init__(self, callback):
+        self.callback = callback
+
+    def on_created(self, event):
+        self.callback()
+
+    def on_deleted(self, event):
+        self.callback()
+
+    def on_modified(self, event):
+        self.callback()
+
+    def on_moved(self, event):
+        self.callback()
 
 
 def route_cloud_messages(cfg: config.Config) -> messages.MBoxDict_Type:
@@ -48,8 +66,6 @@ async def update_cloud_from_local(cfg: config.Config,
     for local_mbox, msgdict in msgs_by_local.items():
         for ch, cloud_msg in msgdict.items():
             lmsg = local_mbox.messages.get(ch)
-            # When doing the first sweep in offline mode ignore missing local
-            # messages, only synchronize message flags.
             if lmsg is None and offline_mode:
                 continue
             msgs_by_cloud[cloud_msg.mailbox][ch] = (lmsg, cloud_msg)
@@ -129,15 +145,23 @@ def main():
     cfg.args = args
     cfg.load_config(args.CFG)
     cfg.loop = asyncio.get_event_loop()
-    with contextlib.closing(pyinotify.WatchManager()) as wm, \
-            contextlib.closing(messages.MessageDB(cfg)) as msgdb:
-        pyinotify.AsyncioNotifier(wm, cfg.loop)
-        cfg.watch_manager = wm
-        cfg.msgdb = msgdb
-        cfg.loop.run_until_complete(synchronize_mail(cfg))
+    cfg.msgdb = messages.MessageDB(cfg)
 
-    cfg.loop.run_until_complete(cfg.loop.shutdown_asyncgens())
-    cfg.loop.close()
+    # Set up watchdog observer
+    event_handler = MailDirEventHandler(cfg.msgdb.cleanup_msgs)
+    observer = Observer()
+    observer.schedule(event_handler, path=cfg.message_db_dir, recursive=True)
+    cfg.observer = observer
+
+    # Start synchronizing
+    try:
+        cfg.loop.run_until_complete(synchronize_mail(cfg))
+    finally:
+        cfg.loop.run_until_complete(cfg.loop.shutdown_asyncgens())
+        observer.stop()
+        observer.join()
+        cfg.msgdb.close()
+        cfg.loop.stop()
 
 
 if __name__ == "__main__":
