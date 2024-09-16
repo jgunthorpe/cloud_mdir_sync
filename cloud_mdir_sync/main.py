@@ -135,8 +135,11 @@ def main():
     try:
         cfg.loop.run_until_complete(synchronize_mail(cfg))
     finally:
+        for task in asyncio.all_tasks(cfg.loop):
+          task.cancel()
         cfg.loop.run_until_complete(cfg.loop.shutdown_asyncgens())
         cfg.observer.stop()
+        cfg.observer.join()
         cfg.msgdb.close()
         cfg.loop.close()
 
