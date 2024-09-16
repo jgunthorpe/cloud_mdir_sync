@@ -72,10 +72,10 @@ class Config(object):
         try:
             res = ring.get_password("cloud_mdir_sync", "storage")
         except keyring.errors.NoKeyringError:
-            return Fernet.generate_key()
+            return Fernet.generate_key().decode()
 
         if res is None:
-            res = Fernet.generate_key()
+            res = Fernet.generate_key().decode()
             ring.set_password("cloud_mdir_sync", "storage", res)
         return res
 
