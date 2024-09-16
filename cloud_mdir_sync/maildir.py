@@ -5,7 +5,8 @@ import pickle
 import re
 import time
 
-import pyinotify
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 from . import config, mailbox, messages, util
 
@@ -14,6 +15,14 @@ def unfold_header(s):
     # Hrm, I wonder if this is the right way to normalize a header?
     return re.sub(r"\n[ \t]+", " ", s)
 
+class MailDirEventHandler(FileSystemEventHandler):
+    def __init__(self, mailbox):
+        self.mailbox = mailbox
+
+    def on_any_event(self, event):
+        if event.event_type in ['modified', 'moved', 'created', 'deleted']:
+            self.mailbox.need_update = True
+            self.mailbox.changed_event.set()
 
 class MailDirMailbox(mailbox.Mailbox):
     """Local MailDir mail directory"""
@@ -31,18 +40,15 @@ class MailDirMailbox(mailbox.Mailbox):
             os.makedirs(os.path.join(self.dfn, sub), mode=0o700, exist_ok=True)
 
     async def setup_mbox(self):
-        self.cfg.watch_manager.add_watch(
-            path=[
-                os.path.join(self.dfn, "cur"),
-                os.path.join(self.dfn, "new")
-            ],
-            proc_fun=self._dir_changed,
-            mask=(pyinotify.IN_ATTRIB | pyinotify.IN_MOVED_FROM
-                  | pyinotify.IN_MOVED_TO
-                  | pyinotify.IN_CREATE | pyinotify.IN_DELETE
-                  | pyinotify.IN_ONLYDIR),
-            quiet=False)
+        self._event_handler = MailDirEventHandler(self)
 
+        dirs_to_watch = [
+          os.path.join(self.dfn, "cur"),
+          os.path.join(self.dfn, "new")
+        ]
+
+        for directory in dirs_to_watch:
+          self.cfg.observer.schedule(self._event_handler, directory, recursive=False)
     def _dir_changed(self, notifier):
         self.need_update = True
         self.changed_event.set()
