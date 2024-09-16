@@ -7,7 +7,6 @@ import subprocess
 from typing import Dict, Optional, Tuple
 
 import aiohttp
-import pyinotify
 
 from . import config, mailbox, messages, oauth
 from .util import asyncio_complete
@@ -129,16 +128,17 @@ def main():
     cfg.args = args
     cfg.load_config(args.CFG)
     cfg.loop = asyncio.get_event_loop()
-    with contextlib.closing(pyinotify.WatchManager()) as wm, \
-            contextlib.closing(messages.MessageDB(cfg)) as msgdb:
-        pyinotify.AsyncioNotifier(wm, cfg.loop)
-        cfg.watch_manager = wm
-        cfg.msgdb = msgdb
+    cfg.observer.start()
+    cfg.msgdb = messages.MessageDB(cfg)
+
+    # Start synchronizing
+    try:
         cfg.loop.run_until_complete(synchronize_mail(cfg))
-
-    cfg.loop.run_until_complete(cfg.loop.shutdown_asyncgens())
-    cfg.loop.close()
-
+    finally:
+        cfg.loop.run_until_complete(cfg.loop.shutdown_asyncgens())
+        cfg.observer.stop()
+        cfg.msgdb.close()
+        cfg.loop.close()
 
 if __name__ == "__main__":
     main()
