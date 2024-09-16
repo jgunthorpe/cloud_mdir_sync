@@ -5,11 +5,11 @@ import pickle
 import re
 import time
 
-from watchdog.observers import Observer
+import asyncio
+
 from watchdog.events import FileSystemEventHandler
 
 from . import config, mailbox, messages, util
-
 
 def unfold_header(s):
     # Hrm, I wonder if this is the right way to normalize a header?
@@ -21,8 +21,9 @@ class MailDirEventHandler(FileSystemEventHandler):
 
     def on_any_event(self, event):
         if event.event_type in ['modified', 'moved', 'created', 'deleted']:
-            self.mailbox.need_update = True
-            self.mailbox.changed_event.set()
+          loop = self.mailbox.cfg.loop
+          set_event = self.mailbox._dir_changed()
+          asyncio.run_coroutine_threadsafe(set_event, loop)
 
 class MailDirMailbox(mailbox.Mailbox):
     """Local MailDir mail directory"""
@@ -49,7 +50,7 @@ class MailDirMailbox(mailbox.Mailbox):
 
         for directory in dirs_to_watch:
           self.cfg.observer.schedule(self._event_handler, directory, recursive=False)
-    def _dir_changed(self, notifier):
+    async def _dir_changed(self):
         self.need_update = True
         self.changed_event.set()
 
