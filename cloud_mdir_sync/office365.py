@@ -81,15 +81,15 @@ def _retry_protect(func):
 
 class GraphAPI(oauth.Account):
     """An OAUTH2 authenticated session to the Microsoft Graph API"""
-    client_id = "122f4826-adf9-465d-8e84-e9d00bc9f234"
     graph_token: Optional[Dict[str,str]] = None
     owa_token: Optional[Dict[str,str]] = None
     authenticator = None
 
-    def __init__(self, cfg: config.Config, user: str, tenant: str):
+    def __init__(self, cfg: config.Config, user: str, tenant: str, client_id: str):
         super().__init__(cfg, user)
         self.domain_id = f"o365-{user}-{tenant}"
         self.tenant = tenant
+        self.client_id = client_id
 
         if self.user is not None:
             self.name = f"{self.user}//{tenant}"

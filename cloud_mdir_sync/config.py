@@ -82,13 +82,13 @@ class Config(object):
     def all_mboxes(self):
         return itertools.chain(self.local_mboxes, self.cloud_mboxes)
 
-    def Office365_Account(self, user=None, tenant="common"):
+    def Office365_Account(self, user=None, tenant="common", client_id="122f4826-adf9-465d-8e84-e9d00bc9f234"):
         """Define an Office365 account credential. If user is left as None
         then the browser will prompt for the user and the choice will be
         cached. To lock the account to a single tenant specify the Azure
         Directory name, ie 'contoso.onmicrosoft.com', or the GUID."""
         from .office365 import GraphAPI
-        self.async_tasks.append(GraphAPI(self, user, tenant))
+        self.async_tasks.append(GraphAPI(self, user, tenant, client_id))
         return self.async_tasks[-1]
 
     def Office365(self, mailbox, account):

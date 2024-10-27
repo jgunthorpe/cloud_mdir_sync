@@ -78,6 +78,14 @@ MailDir("~/mail/INBOX")
 Office365("inbox", Office365_Account(user="user@domain.com"))
 ```
 
+and in case your work configuration requires you to use your specific tenant to
+register `cloud_mdir_sync`
+
+```Python
+MailDir("~/mail/INBOX")
+Office365("inbox", Office365_Account(user="user@domain.com", tenant="<MSFT tenant id>", client_id="<MSFT app client id>"))
+```
+
 or with Gmail:
 
 ```Python
