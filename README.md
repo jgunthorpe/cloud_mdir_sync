@@ -86,6 +86,14 @@ MailDir("~/mail/INBOX")
 Office365("inbox", Office365_Account(user="user@domain.com", tenant="<MSFT tenant id>", client_id="<MSFT app client id>"))
 ```
 
+and if you have a built-in work configuration in `cloud_mdir_sync` but want to
+use the common registration
+
+```Python
+MailDir("~/mail/INBOX")
+Office365("inbox", Office365_Account(user="user@domain.com", use_default_registration=True))
+```
+
 or with Gmail:
 
 ```Python

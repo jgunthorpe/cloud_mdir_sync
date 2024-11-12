@@ -79,6 +79,39 @@ def _retry_protect(func):
     return async_wrapper
 
 
+class AppRegistration():
+    registration_lookup: Dict[str,Dict[str,str]] = {
+        "nvidia.com": {
+            "tenant": "43083d15-7273-40c1-b7db-39efd9ccc17a",
+            "client_id": "472bb794-a546-4311-96f9-76bc79989214",
+        },
+    }
+    default_registration: Dict[str,str] = {
+        "tenant": "common",
+        "client_id": "122f4826-adf9-465d-8e84-e9d00bc9f234",
+    }
+
+    def __init__(self, user: str, use_default_registration: bool):
+        self.use_default_registration = use_default_registration
+        user_split = user.split("@")
+        if len(user_split) < 2:
+            self.use_default_registration = True
+        else:
+            self.domain = user_split[1]
+
+    def get(self) -> tuple[str,str]:
+        default_tenant = self.default_registration["tenant"]
+        default_client_id = self.default_registration["client_id"]
+
+        if self.use_default_registration:
+            return (default_tenant, default_client_id)
+
+        registration = self.registration_lookup.get(self.domain)
+        if registration is None:
+            return (default_tenant, default_client_id)
+
+        return (registration["tenant"], registration["client_id"])
+
 class GraphAPI(oauth.Account):
     """An OAUTH2 authenticated session to the Microsoft Graph API"""
     graph_token: Optional[Dict[str,str]] = None
