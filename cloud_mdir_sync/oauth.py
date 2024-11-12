@@ -192,6 +192,7 @@ class OAuth2Session(object):
                 data=dict(oauthlib.common.urldecode(body)),
                 headers={
                     "Accept": "application/json",
+                    "Origin": "http://127.0.0.1:8080/",
                     #"Content-Type":
                     #"application/x-www-form-urlencoded;charset=UTF-8",
                 }) as op:
@@ -215,6 +216,7 @@ class OAuth2Session(object):
                 data=dict(oauthlib.common.urldecode(body)),
                 headers={
                     "Accept": "application/json",
+                    "Origin": "http://127.0.0.1:8080/",
                     #"Content-Type":
                     #"application/x-www-form-urlencoded;charset=UTF-8",
                 }) as op:
