@@ -559,7 +559,7 @@ class O365Mailbox(mailbox.Mailbox):
                        | messages.Message.FLAG_DELETED)
     loop: asyncio.AbstractEventLoop
     timer = None
-    use_owa_subscribe = True
+    use_owa_subscribe = False
     graph: GraphAPI
     delete_action = "archive" # or delete
 
