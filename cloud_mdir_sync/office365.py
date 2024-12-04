@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0+
+
+# Bring standard collection type hinting generics to python<3.9
+from __future__ import annotations
+
 import asyncio
 import datetime
 import functools
