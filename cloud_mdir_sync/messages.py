@@ -77,7 +77,7 @@ class Message(object):
             val = emsg.get(hdr)
             if val is None:
                 return None
-            return re.sub(r"\n[ \t]+", " ", val).strip()
+            return re.sub(r"\n[ \t]+", " ", str(val)).strip()
 
     def fill_email_id(self):
         """Try to fill in the email_id from our caches or by reading the
