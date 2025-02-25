@@ -5,7 +5,7 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any, Dict, List
 
-import pyinotify
+from watchdog.observers import Observer
 
 if TYPE_CHECKING:
     from . import messages, mailbox, oauth
@@ -20,7 +20,7 @@ class Config(object):
     web_app: "oauth.WebServer"
     logger: logging.Logger
     loop: asyncio.AbstractEventLoop
-    watch_manager: pyinotify.WatchManager
+    observer: Observer
     msgdb: "messages.MessageDB"
     cloud_mboxes: "List[mailbox.Mailbox]"
     local_mboxes: "List[mailbox.Mailbox]"
@@ -44,6 +44,7 @@ class Config(object):
         self.async_tasks = []
         self.message_db_dir = os.path.expanduser(self.message_db_dir)
         self.direct_message = self._direct_message
+        self.observer = Observer()
 
     def load_config(self, fn):
         """The configuration file is a python script that we execute with

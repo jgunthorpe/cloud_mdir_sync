@@ -37,7 +37,7 @@ setup(
         'keyring>=21',
         'oauthlib>=3.1',
         'pyasyncore',
-        'pyinotify>=0.9.6',
+        'watchdog',
     ],
     include_package_data=True,
     zip_safe=False)
