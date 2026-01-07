@@ -127,7 +127,8 @@ def main():
     cfg = config.Config()
     cfg.args = args
     cfg.load_config(args.CFG)
-    cfg.loop = asyncio.get_event_loop()
+    cfg.loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(cfg.loop)
     cfg.observer.start()
     cfg.msgdb = messages.MessageDB(cfg)
 
